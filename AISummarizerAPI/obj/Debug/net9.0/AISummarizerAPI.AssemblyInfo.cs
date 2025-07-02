@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AISummarizerAPI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7f1869db1381c77db691808d49f92356ec9e0377")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f91e76481132991fae8f52fb4710d286296285a9")]
 [assembly: System.Reflection.AssemblyProductAttribute("AISummarizerAPI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AISummarizerAPI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

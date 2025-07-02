@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "uj4rIldbuChxDLKiD+N4iPGu31z9rK9y5Cv7EZZFao4=",
+  "Source": "AISummarizerAPI",
+  "BasePath": "_content/AISummarizerAPI",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}
