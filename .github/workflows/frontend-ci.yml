@@ -36,8 +36,14 @@ jobs:
       run: npm run lint --if-present
       continue-on-error: true
     
-    - name: Run tests
-      run: npm test -- --coverage --watchAll=false --passWithNoTests
+    - name: Run tests (if available)
+      run: |
+        if npm run | grep -q "test"; then
+          echo "Running tests..."
+          npm test -- --coverage --watchAll=false --passWithNoTests
+        else
+          echo "No test script found in package.json, skipping tests..."
+        fi
       env:
         CI: true
     

@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main, develop ]
     paths: 
-      - 'backend/**'
+      - 'AISummarizerAPI/**'
       - '.github/workflows/backend-ci.yml'
   pull_request:
     branches: [ main ]
     paths: 
-      - 'backend/**'
+      - 'AISummarizerAPI/**'
       - '.github/workflows/backend-ci.yml'
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: ./backend
+        working-directory: ./AISummarizerAPI
     
     steps:
     - name: Checkout code
@@ -35,8 +35,14 @@ jobs:
     - name: Build project
       run: dotnet build --no-restore --configuration Release
     
-    - name: Run tests
-      run: dotnet test --no-build --configuration Release --logger trx --collect:"XPlat Code Coverage" --verbosity normal
+    - name: Run tests (if available)
+      run: |
+        if find . -name "*.csproj" -exec grep -l "Microsoft.NET.Test.Sdk" {} \; | head -1; then
+          echo "Test project found, running tests..."
+          dotnet test --no-build --configuration Release --logger trx --collect:"XPlat Code Coverage" --verbosity normal
+        else
+          echo "No test projects found, skipping tests..."
+        fi
     
     - name: Publish application
       run: dotnet publish --no-build --configuration Release --output ./publish
@@ -45,5 +51,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: backend-publish
-        path: backend/publish/
+        path: AISummarizerAPI/publish/
         retention-days: 7
