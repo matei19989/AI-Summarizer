@@ -1,0 +1,51 @@
+name: PR Quality Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  code-quality-checks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check file changes
+      run: |
+        echo "Files changed in this PR:"
+        git diff --name-only origin/${{ github.base_ref }}...HEAD
+    
+    - name: Validate workflow files
+      run: |
+        echo "Checking if workflow files are valid YAML..."
+        for file in .github/workflows/*.yml; do
+          if [ -f "$file" ]; then
+            echo "Checking $file"
+            # Basic YAML syntax check using Python
+            python3 -c "import yaml; yaml.safe_load(open('$file'))" || exit 1
+          fi
+        done
+    
+    - name: Check for large files
+      run: |
+        echo "Checking for files larger than 50MB..."
+        find . -type f -size +50M -not -path "./.git/*" -exec ls -lh {} \; | head -20
+    
+    - name: Check for common issues
+      run: |
+        echo "Checking for common issues..."
+        
+        # Check for hardcoded secrets patterns (basic check)
+        if grep -r -E "(password|secret|key|token)\s*=\s*['\"][^'\"]*['\"]" --exclude-dir=.git --exclude-dir=node_modules .; then
+          echo "⚠️  Potential hardcoded secrets found. Please review."
+        else
+          echo "✅ No obvious hardcoded secrets found."
+        fi
+        
+        # Check for TODO/FIXME comments
+        echo "📝 TODOs and FIXMEs found:"
+        grep -r -n -E "(TODO|FIXME|HACK)" --exclude-dir=.git --exclude-dir=node_modules . || echo "None found."
