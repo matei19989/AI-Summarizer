@@ -9,7 +9,7 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "your-github-username"  # Replace with your actual username
+      - "matei1998"  # Replace with your actual username
     labels:
       - "dependencies"
       - "frontend"
