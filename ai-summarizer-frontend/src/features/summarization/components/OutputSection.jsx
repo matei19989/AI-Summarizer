@@ -4,6 +4,8 @@ import { PrimaryButton } from '../../../components/common/PrimaryButton';
 export const OutputSection = ({ outputContent, hasAudio = false, onPlayAudio }) => {
   return (
     <div className="space-y-4">
+      <div className="h-12"></div>
+      
       <label className="block text-sm font-medium text-gray-700 mb-2 font-serif">
         Generated Summary
       </label>

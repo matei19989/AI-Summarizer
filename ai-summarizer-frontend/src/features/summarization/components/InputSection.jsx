@@ -46,3 +46,5 @@ export const InputSection = ({
     </div>
   );
 };
+
+export default InputSection;
