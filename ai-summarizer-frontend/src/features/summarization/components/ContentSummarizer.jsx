@@ -20,7 +20,7 @@ export const ContentSummarizer = () => {
   } = useSummarization();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" style={{ fontFamily: 'Times New Roman, serif' }}>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-serif">
       <div className="w-full max-w-6xl bg-white rounded-lg shadow-lg p-8">
         <AppHeader />
         

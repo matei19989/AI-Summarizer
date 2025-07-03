@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { ValidationUtils } from '../../../utils/ValidationUtils';
 import { SummarizationService } from '../services/SummarizationService';
+import { INPUT_MODES } from '../components/constants';
 
 export const useSummarization = () => {
-  const [inputMode, setInputMode] = useState('text');
+  const [inputMode, setInputMode] = useState(INPUT_MODES.TEXT);
   const [inputContent, setInputContent] = useState('');
   const [outputContent, setOutputContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
