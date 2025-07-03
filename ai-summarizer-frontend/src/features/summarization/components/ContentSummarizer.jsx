@@ -5,7 +5,7 @@ import { OutputSection } from './OutputSection';
 import { PrimaryButton } from '../../../components/common/PrimaryButton';
 import { useSummarization } from '../hooks/useSummarization';
 
-const ContentSummarizer = () => {
+export const ContentSummarizer = () => {
   const {
     inputMode,
     inputContent,

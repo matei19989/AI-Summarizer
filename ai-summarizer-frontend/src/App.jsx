@@ -1,5 +1,5 @@
 import React from 'react'
-import ContentSummarizer from './features/summarization/components/ContentSummarizer'
+import { ContentSummarizer } from './features/summarization/components/ContentSummarizer'
 import './App.css'
 
 function App() {

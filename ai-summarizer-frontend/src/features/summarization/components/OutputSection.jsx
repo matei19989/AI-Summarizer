@@ -1,7 +1,7 @@
 import React from 'react';
-import PrimaryButton from '../../../components/common/PrimaryButton';
+import { PrimaryButton } from '../../../components/common/PrimaryButton';
 
-const OutputSection = ({ outputContent, hasAudio = false, onPlayAudio }) => {
+export const OutputSection = ({ outputContent, hasAudio = false, onPlayAudio }) => {
   return (
     <div className="space-y-4">
       <label className="block text-sm font-medium text-gray-700 mb-2 font-serif">
@@ -28,5 +28,3 @@ const OutputSection = ({ outputContent, hasAudio = false, onPlayAudio }) => {
     </div>
   );
 };
-
-export default OutputSection;

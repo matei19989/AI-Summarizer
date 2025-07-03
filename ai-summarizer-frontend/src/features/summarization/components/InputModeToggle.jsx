@@ -1,6 +1,6 @@
 import React from 'react';
 
-const InputModeToggle = ({ currentMode, onModeChange }) => {
+export const InputModeToggle = ({ currentMode, onModeChange }) => {
   const modes = [
     { id: 'text', label: '📄 Plain Text' },
     { id: 'url', label: '🔗 URL' }
@@ -24,5 +24,3 @@ const InputModeToggle = ({ currentMode, onModeChange }) => {
     </div>
   );
 };
-
-export default InputModeToggle;
