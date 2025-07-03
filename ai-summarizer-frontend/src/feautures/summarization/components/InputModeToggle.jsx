@@ -1,3 +1,5 @@
+import React from 'react';
+
 const InputModeToggle = ({ currentMode, onModeChange }) => {
   const modes = [
     { id: 'text', label: '📄 Plain Text' },
@@ -22,3 +24,5 @@ const InputModeToggle = ({ currentMode, onModeChange }) => {
     </div>
   );
 };
+
+export default InputModeToggle;

@@ -1,3 +1,5 @@
+import React from 'react';
+
 const AppHeader = () => {
   return (
     <div className="text-center mb-8">
@@ -10,3 +12,5 @@ const AppHeader = () => {
     </div>
   );
 };
+
+export default AppHeader;

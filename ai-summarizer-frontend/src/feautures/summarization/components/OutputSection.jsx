@@ -1,3 +1,6 @@
+import React from 'react';
+import PrimaryButton from '../../../components/common/PrimaryButton';
+
 const OutputSection = ({ outputContent, hasAudio = false, onPlayAudio }) => {
   return (
     <div className="space-y-4">
@@ -25,3 +28,5 @@ const OutputSection = ({ outputContent, hasAudio = false, onPlayAudio }) => {
     </div>
   );
 };
+
+export default OutputSection;

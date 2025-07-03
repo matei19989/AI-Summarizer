@@ -1,3 +1,5 @@
+import React from 'react';
+
 const PrimaryButton = ({ 
   onClick, 
   disabled = false, 
@@ -41,3 +43,5 @@ const PrimaryButton = ({
     </button>
   );
 };
+
+export default PrimaryButton;

@@ -1,3 +1,6 @@
+import React from 'react';
+import InputModeToggle from './InputModeToggle';
+
 const InputSection = ({ 
   inputMode, 
   inputContent, 
@@ -43,3 +46,5 @@ const InputSection = ({
     </div>
   );
 };
+
+export default InputSection;
