@@ -1,3 +1,5 @@
+import { INPUT_MODES } from '../features/summarization/components/constants';
+
 // Utility functions for input validation
 export const ValidationUtils = {
   validateInput: (content, mode) => {
@@ -5,7 +7,7 @@ export const ValidationUtils = {
       return 'Please enter some content to summarize';
     }
     
-    if (mode === 'url') {
+    if (mode === INPUT_MODES.URL) {
       // Basic URL validation - check if it looks like a URL
       const urlPattern = /^https?:\/\/.+/;
       if (!urlPattern.test(content.trim())) {
