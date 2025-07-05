@@ -1,8 +1,38 @@
+using AISummarizerAPI.Services.Interfaces;
+using AISummarizerAPI.Services.Implementations;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// Register HttpClient for external API calls
+builder.Services.AddHttpClient<ISummarizationService, SummarizationService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/1.0");
+});
+
+// Register our custom services
+builder.Services.AddScoped<ISummarizationService, SummarizationService>();
+
+// Configure CORS for React frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("ReactPolicy", corsBuilder =>
+    {
+        corsBuilder
+            .WithOrigins(
+                "http://localhost:3000",    // Default React dev server
+                "http://localhost:5173",    // Vite dev server
+                "http://localhost:4173"     // Vite preview server
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
+});
 
 var app = builder.Build();
 
@@ -14,28 +44,20 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+// Apply CORS policy - must come before UseRouting
+app.UseCors("ReactPolicy");
 
-app.MapGet("/weatherforecast", () =>
+app.UseAuthorization();
+
+app.MapControllers();
+
+// Add a simple health check endpoint
+app.MapGet("/", () => new
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    Application = "AI Content Summarizer API",
+    Version = "1.0.0",
+    Status = "Running",
+    Timestamp = DateTime.UtcNow
+});
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
