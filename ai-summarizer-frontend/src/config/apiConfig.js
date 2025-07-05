@@ -1,8 +1,9 @@
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5088',
   ENDPOINTS: {
-    SUMMARIZE_TEXT: '/api/summarize/text',
-    SUMMARIZE_URL: '/api/summarize/url',
+    SUMMARIZE: '/api/summarization/summarize',
+    HEALTH_CHECK: '/api/summarization/health',
+    API_INFO: '/api/summarization/info',
     TEXT_TO_SPEECH: '/api/tts'
   },
   TIMEOUT: 30000
