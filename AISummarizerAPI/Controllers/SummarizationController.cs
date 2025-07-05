@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using AISummarizerAPI.Models.DTOs;
 using AISummarizerAPI.Services.Interfaces;
+using AISummarizerAPI.Utils;
 
 namespace AISummarizerAPI.Controllers;
 
@@ -28,7 +29,8 @@ public class SummarizationController : ControllerBase
         [FromBody] SummarizationRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Received summarization request for content type: {ContentType}", request?.ContentType ?? "null");
+        _logger.LogInformation("Received summarization request for content type: {ContentType}", 
+            LogSanitizer.Sanitize(request?.ContentType));
 
         try
         {
@@ -40,7 +42,7 @@ public class SummarizationController : ControllerBase
             }
 
             _logger.LogInformation("Request content length: {Length}, type: {Type}", 
-                request.Content?.Length ?? 0, request.ContentType);
+                request.Content?.Length ?? 0, LogSanitizer.Sanitize(request.ContentType));
 
             if (!ModelState.IsValid)
             {
@@ -69,7 +71,8 @@ public class SummarizationController : ControllerBase
                     response = await _summarizationService.SummarizeUrlAsync(request.Content!, cancellationToken);
                     break;
                 default:
-                    _logger.LogWarning("Unsupported content type: {ContentType}", request.ContentType);
+                    _logger.LogWarning("Unsupported content type: {ContentType}", 
+                        LogSanitizer.Sanitize(request.ContentType));
                     return BadRequest(new { error = $"Unsupported content type '{request.ContentType}'. Use 'text' or 'url'." });
             }
 
@@ -79,7 +82,8 @@ public class SummarizationController : ControllerBase
                 return BadRequest(new { error = response.ErrorMessage });
             }
 
-            _logger.LogInformation("Summarization completed successfully for content type: {ContentType}", request.ContentType);
+            _logger.LogInformation("Summarization completed successfully for content type: {ContentType}", 
+                LogSanitizer.Sanitize(request.ContentType));
             return Ok(response);
         }
         catch (OperationCanceledException)
