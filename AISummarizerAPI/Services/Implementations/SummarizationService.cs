@@ -1,5 +1,6 @@
 using AISummarizerAPI.Models.DTOs;
 using AISummarizerAPI.Services.Interfaces;
+using AISummarizerAPI.Utils;
 using System.Text.RegularExpressions;
 
 namespace AISummarizerAPI.Services.Implementations;
@@ -87,7 +88,7 @@ public class SummarizationService : ISummarizationService
     /// </summary>
     public async Task<SummarizationResponse> SummarizeUrlAsync(string url, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting URL summarization for: {Url}", url);
+        _logger.LogInformation("Starting URL summarization for: {Url}", LogSanitizer.SanitizeAndTruncate(url, 200));
 
         try
         {
