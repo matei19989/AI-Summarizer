@@ -1,6 +1,40 @@
 @AISummarizerAPI_HostAddress = http://localhost:5088
 
-GET {{AISummarizerAPI_HostAddress}}/weatherforecast/
+### Root Endpoint
+GET {{AISummarizerAPI_HostAddress}}/
 Accept: application/json
 
-###
+### Health Check
+GET {{AISummarizerAPI_HostAddress}}/api/summarization/health
+Accept: application/json
+
+### API Info
+GET {{AISummarizerAPI_HostAddress}}/api/summarization/info
+Accept: application/json
+
+### Test Text Summarization
+POST {{AISummarizerAPI_HostAddress}}/api/summarization/summarize
+Content-Type: application/json
+
+{
+  "content": "This is a test article about artificial intelligence and machine learning. AI has revolutionized many industries and continues to grow rapidly. Machine learning algorithms can process vast amounts of data and identify patterns that humans might miss. This technology is being used in healthcare, finance, transportation, and many other sectors to improve efficiency and accuracy.",
+  "contentType": "text"
+}
+
+### Test URL Summarization
+POST {{AISummarizerAPI_HostAddress}}/api/summarization/summarize
+Content-Type: application/json
+
+{
+  "content": "https://example.com/article",
+  "contentType": "url"
+}
+
+### Test Invalid Request (should return validation error)
+POST {{AISummarizerAPI_HostAddress}}/api/summarization/summarize
+Content-Type: application/json
+
+{
+  "content": "Too short",
+  "contentType": "text"
+}
