@@ -34,7 +34,7 @@ COPY nginx.prod.conf /etc/nginx/conf.d/nginx.prod.conf
 # Copy built React application from build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy startup script that will choose the right config
+# Copy startup script that will choose the right config and make it executable
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

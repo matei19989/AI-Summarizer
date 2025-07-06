@@ -30,6 +30,9 @@ RUN dotnet publish "AISummarizerAPI.csproj" -c Release --no-build -o /app/publis
 # Runtime stage - use minimal runtime image for smaller final image
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Create a non-root user for security best practices
 # Running as root in containers is a security risk
 RUN groupadd -r appuser && useradd -r -g appuser appuser

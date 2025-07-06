@@ -45,8 +45,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    # Security hardening
-    read_only: true
+    # Security hardening - removed read_only due to logging needs
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /var/tmp:noexec,nosuid,size=50m
@@ -87,7 +86,7 @@ services:
         delay: 5s
         max_attempts: 3
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -112,10 +111,6 @@ services:
 volumes:
   app_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./logs
 
 # Isolated network
 networks:
