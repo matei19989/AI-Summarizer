@@ -1,59 +1,63 @@
 # ===================================================================
-# Docker Compose for Production Environment
-# Clean, secure two-service setup optimized for production deployment
+# Production Docker Compose - AI Content Summarizer
+# Professional setup with proper networking and security
 # ===================================================================
 
 version: '3.8'
 
 services:
-  # Backend API Service - Production Configuration
+  # Backend API Service
   backend:
     build:
       context: ./AISummarizerAPI
       dockerfile: Dockerfile
       target: runtime
     container_name: ai-summarizer-api
-    # DO NOT expose backend port directly in production
-    # Frontend nginx will proxy API requests - this is more secure
+    # Internal port only - accessed via nginx proxy
     expose:
       - "5088"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5088
-      # Production security settings
       - ASPNETCORE_DETAILEDERRORS=false
       - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Warning
-      - ASPNETCORE_LOGGING__LOGLEVEL__MICROSOFT=Warning
-      - ASPNETCORE_LOGGING__LOGLEVEL__SYSTEM=Warning
-    # Production volumes - minimal and secure
+      - ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
     volumes:
-      - ./logs:/app/logs:rw
-      - /etc/ssl/certs:/etc/ssl/certs:ro  # Mount system CA certificates
+      - app_logs:/app/logs
+      - /etc/ssl/certs:/etc/ssl/certs:ro
     networks:
-      - ai-summarizer-network
-    # Resource limits for production stability
+      - app_network
     deploy:
       resources:
         limits:
-          cpus: '1.0'      # Limit to 1 CPU core
-          memory: 1G       # Limit to 1GB RAM
+          cpus: '1.0'
+          memory: 1G
         reservations:
-          cpus: '0.5'      # Reserve 0.5 CPU cores
-          memory: 512M     # Reserve 512MB RAM
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: unless-stopped
+        delay: 5s
+        max_attempts: 3
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5088/api/summarization/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:5088/api/summarization/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
-    restart: unless-stopped
-    # Security: read-only root filesystem with specific writable paths
+      retries: 3
+      start_period: 40s
+    # Security hardening
     read_only: true
     tmpfs:
-      - /tmp
-      - /var/tmp
+      - /tmp:noexec,nosuid,size=100m
+      - /var/tmp:noexec,nosuid,size=50m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
 
-  # Frontend Service - Production Configuration
+  # Frontend Service with Nginx Proxy
   frontend:
     build:
       context: ./ai-summarizer-frontend
@@ -61,40 +65,66 @@ services:
       target: runtime
     container_name: ai-summarizer-frontend
     ports:
-      - "80:80"      # Standard HTTP port
-      - "443:443"    # Standard HTTPS port (if SSL configured)
-    # FIXED: Removed problematic environment variable
-    # In production, API calls go through nginx proxy automatically
+      - "80:80"
+      - "443:443"  # For future SSL
+    environment:
+      - NGINX_ENV=production  # This selects nginx.prod.conf
     networks:
-      - ai-summarizer-network
+      - app_network
     depends_on:
       backend:
         condition: service_healthy
-    # Resource limits for frontend
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.1'
+          memory: 64M
+      restart_policy:
+        condition: unless-stopped
+        delay: 5s
+        max_attempts: 3
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 30s
-    restart: unless-stopped
+      start_period: 15s
     # Security hardening
     read_only: true
     tmpfs:
-      - /var/cache/nginx
-      - /var/run
-      - /tmp
+      - /var/cache/nginx:noexec,nosuid,size=50m
+      - /var/run:noexec,nosuid,size=10m
+      - /tmp:noexec,nosuid,size=50m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
 
-# Production network configuration - isolated and secure
+# Named volumes for persistence
+volumes:
+  app_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+
+# Isolated network
 networks:
-  ai-summarizer-network:
+  app_network:
     driver: bridge
-    name: ai-summarizer-prod
+    name: ai-summarizer
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: br-ai-sum

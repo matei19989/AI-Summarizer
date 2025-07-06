@@ -1,12 +1,10 @@
 # ===================================================================
-# Docker Compose for Development Environment
-# Simple two-service setup: backend API + frontend SPA
+# Development Docker Compose with nginx configuration selection
 # ===================================================================
 
 version: '3.8'
 
 services:
-  # Backend API Service
   backend:
     build:
       context: ./AISummarizerAPI
@@ -14,27 +12,24 @@ services:
       target: runtime
     container_name: ai-summarizer-api-dev
     ports:
-      - "5088:5088"  # Expose backend port for direct access during development
+      - "5088:5088"  # Expose for direct debugging
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5088
-      # Development-specific settings for easier debugging
       - ASPNETCORE_DETAILEDERRORS=true
       - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Information
     volumes:
-      # Mount logs for easier debugging
       - ./logs:/app/logs
     networks:
       - ai-summarizer-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5088/api/summarization/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:5088/api/summarization/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     restart: unless-stopped
 
-  # Frontend Service  
   frontend:
     build:
       context: ./ai-summarizer-frontend
@@ -42,23 +37,22 @@ services:
       target: runtime
     container_name: ai-summarizer-frontend-dev
     ports:
-      - "3000:80"  # Map container port 80 to host port 3000
-    # FIXED: Removed problematic environment variable
-    # The frontend will use nginx proxy to reach backend instead of direct API calls
+      - "3000:80"
+    environment:
+      - NGINX_ENV=development  # This selects nginx.dev.conf
     networks:
       - ai-summarizer-network
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     restart: unless-stopped
 
-# Dedicated network for service communication
 networks:
   ai-summarizer-network:
     driver: bridge
