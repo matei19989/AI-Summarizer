@@ -1,0 +1,59 @@
+# ===================================================================
+# Development Docker Compose with nginx configuration selection
+# ===================================================================
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./AISummarizerAPI
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ai-summarizer-api-dev
+    ports:
+      - "5088:5088"  # Expose for direct debugging
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5088
+      - ASPNETCORE_DETAILEDERRORS=true
+      - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Information
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - ai-summarizer-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5088/api/summarization/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./ai-summarizer-frontend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ai-summarizer-frontend-dev
+    ports:
+      - "3000:80"  # Map host port 3000 to container port 80
+    environment:
+      - NGINX_ENV=development  # This selects nginx.dev.conf
+    networks:
+      - ai-summarizer-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  ai-summarizer-network:
+    driver: bridge
+    name: ai-summarizer-dev

@@ -1,0 +1,116 @@
+# ===================================================================
+# .dockerignore for React + Vite Frontend
+# Excludes unnecessary files from Docker build context
+# Critical for security and build performance
+# ===================================================================
+
+# Dependencies - these are installed fresh in the Docker build
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build outputs - generated during Docker build process
+dist/
+dist-ssr/
+build/
+.output/
+.nuxt/
+.next/
+
+# Development and editor files
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables and secrets - SECURITY CRITICAL
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+.cache/
+
+# Testing files and coverage reports
+coverage/
+.coverage
+.nyc_output/
+test-results/
+playwright-report/
+
+# Runtime files
+*.tsbuildinfo
+.eslintcache
+
+# Package manager files (except package.json and package-lock.json)
+.yarn/
+.pnp.*
+yarn.lock
+pnpm-lock.yaml
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Documentation files (not needed in runtime)
+*.md
+README*
+CHANGELOG*
+LICENSE*
+docs/
+
+# Development configuration files
+.eslintrc*
+.prettierrc*
+vite.config.ts
+vitest.config.ts
+jest.config.*
+cypress.json
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Docker files themselves
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+*.yml
+*.yaml
+!docker-compose*.yml
+
+# Storybook
+storybook-static/
+.storybook/
+
+# Large media files that shouldn't be in containers
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm

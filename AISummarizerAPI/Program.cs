@@ -28,20 +28,40 @@ builder.Services.AddHttpClient<IUrlContentExtractor, UrlContentExtractor>(client
 builder.Services.AddScoped<IUrlContentExtractor, UrlContentExtractor>();
 builder.Services.AddScoped<ISummarizationService, SummarizationService>();
 
-// Configure CORS for React frontend
+// Updated Program.cs CORS configuration for Docker environment
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactPolicy", corsBuilder =>
     {
-        corsBuilder
-            .WithOrigins(
-                "http://localhost:3000",    // Default React dev server
-                "http://localhost:5173",    // Vite dev server
-                "http://localhost:4173"     // Vite preview server
-            )
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
+        if (builder.Environment.IsDevelopment())
+        {
+            // Development: Allow common dev server origins
+            corsBuilder
+                .WithOrigins(
+                    "http://localhost:3000",    // React dev server
+                    "http://localhost:5173",    // Vite dev server
+                    "http://localhost:4173",    // Vite preview
+                    "http://frontend:80",       // Docker development
+                    "http://localhost:80"       // Docker host access
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        }
+        else
+        {
+            // Production: More restrictive
+            corsBuilder
+                .WithOrigins(
+                    "http://frontend:80",       // Docker internal communication
+                    "http://localhost:80",      // Docker host access
+                    "https://localhost:443",    // If SSL enabled
+                    "https://yourdomain.com"    // Replace with your actual domain
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .WithExposedHeaders("Content-Length", "Content-Type");
+        }
     });
 });
 
