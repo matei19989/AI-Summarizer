@@ -63,9 +63,8 @@ services:
     ports:
       - "80:80"      # Standard HTTP port
       - "443:443"    # Standard HTTPS port (if SSL configured)
-    environment:
-      # In production, API calls go through nginx proxy
-      - VITE_API_BASE_URL=/api
+    # FIXED: Removed problematic environment variable
+    # In production, API calls go through nginx proxy automatically
     networks:
       - ai-summarizer-network
     depends_on:

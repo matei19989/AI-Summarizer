@@ -43,10 +43,8 @@ services:
     container_name: ai-summarizer-frontend-dev
     ports:
       - "3000:80"  # Map container port 80 to host port 3000
-    environment:
-      # Point to the backend service for API calls
-      # In development, we can also access backend directly at localhost:5088
-      - VITE_API_BASE_URL=http://localhost:5088
+    # FIXED: Removed problematic environment variable
+    # The frontend will use nginx proxy to reach backend instead of direct API calls
     networks:
       - ai-summarizer-network
     depends_on:

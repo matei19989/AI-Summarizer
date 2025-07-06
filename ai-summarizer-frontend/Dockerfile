@@ -14,9 +14,9 @@ WORKDIR /app
 # This allows npm install to be cached if dependencies don't change
 COPY package*.json ./
 
-# Install dependencies
-# Using npm ci for faster, reliable, reproducible builds
-RUN npm ci --only=production
+# Install ALL dependencies (including devDependencies needed for build)
+# FIXED: Removed --only=production flag that was breaking the build
+RUN npm ci
 
 # Copy all source code
 COPY . .
@@ -36,20 +36,10 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Copy built React application from build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Create non-root user for security
-RUN addgroup -g 101 -S nginx && \
-    adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx
-
-# Set proper permissions for nginx directories
-RUN chown -R nginx:nginx /var/cache/nginx && \
-    chown -R nginx:nginx /var/log/nginx && \
-    chown -R nginx:nginx /etc/nginx/conf.d && \
-    touch /var/run/nginx.pid && \
-    chown -R nginx:nginx /var/run/nginx.pid && \
-    chown -R nginx:nginx /usr/share/nginx/html
-
-# Switch to non-root user
-USER nginx
+# Ensure proper permissions for nginx content
+# Note: nginx:alpine runs as root by default, which is actually expected behavior
+# The nginx worker processes run as nginx user, controlled by nginx.conf
+RUN chmod -R 755 /usr/share/nginx/html
 
 # Expose port 80 for the web server
 EXPOSE 80
