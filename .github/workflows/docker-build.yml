@@ -72,21 +72,21 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       # Extract metadata for Docker tags and labels
-      # This creates consistent tagging based on Git references
+      # Fixed tagging to avoid invalid tag formats
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend
           tags: |
-            # Tag with 'latest' for main branch
+            # Tag with branch name for branches
             type=ref,event=branch
             # Tag with version for releases
             type=ref,event=tag
-            # Tag with PR number for pull requests
+            # Tag with PR number for pull requests  
             type=ref,event=pr
             # Tag with commit SHA for unique identification
-            type=sha,prefix={{branch}}-
+            type=sha,prefix=sha-
             # Always tag latest for main branch
             type=raw,value=latest,enable={{is_default_branch}}
       
@@ -140,7 +140,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=ref,event=pr
-            type=sha,prefix={{branch}}-
+            type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
       
       - name: Build and push frontend image
