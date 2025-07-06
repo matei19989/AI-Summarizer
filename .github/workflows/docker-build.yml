@@ -39,15 +39,16 @@ env:
   # Using GitHub repository owner and name for consistent naming
   IMAGE_NAME: ${{ github.repository }}
 
+# Default permissions for security (principle of least privilege)
+permissions:
+  contents: read
+  packages: write
+  security-events: write  # For security scanning results
+
 jobs:
   # Job 1: Build and test backend Docker image
   build-backend:
     runs-on: ubuntu-latest
-    
-    # Grant permissions to read repository and write to packages
-    permissions:
-      contents: read
-      packages: write
     
     steps:
       - name: Checkout repository
@@ -111,10 +112,6 @@ jobs:
   # Job 2: Build and test frontend Docker image
   build-frontend:
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: read
-      packages: write
     
     steps:
       - name: Checkout repository
