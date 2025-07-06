@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Matei\\Desktop\\AI Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj": {}
+    "C:\\Users\\Matei\\Desktop\\AI-Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Matei\\Desktop\\AI Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj": {
+    "C:\\Users\\Matei\\Desktop\\AI-Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Matei\\Desktop\\AI Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj",
+        "projectUniqueName": "C:\\Users\\Matei\\Desktop\\AI-Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj",
         "projectName": "AISummarizerAPI",
-        "projectPath": "C:\\Users\\Matei\\Desktop\\AI Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj",
+        "projectPath": "C:\\Users\\Matei\\Desktop\\AI-Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj",
         "packagesPath": "C:\\Users\\Matei\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Matei\\Desktop\\AI Summarizer\\AISummarizerAPI\\obj\\",
+        "outputPath": "C:\\Users\\Matei\\Desktop\\AI-Summarizer\\AISummarizerAPI\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "D:\\c# shared\\NuGetPackages"
@@ -50,9 +50,17 @@
         "net9.0": {
           "targetAlias": "net9.0",
           "dependencies": {
+            "HtmlAgilityPack": {
+              "target": "Package",
+              "version": "[1.12.1, )"
+            },
             "Microsoft.AspNetCore.OpenApi": {
               "target": "Package",
               "version": "[9.0.6, )"
+            },
+            "SmartReader": {
+              "target": "Package",
+              "version": "[0.10.0, )"
             }
           },
           "imports": [
