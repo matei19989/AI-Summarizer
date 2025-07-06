@@ -9,25 +9,33 @@ namespace AISummarizerAPI.Services.Implementations;
 /// Implementation of summarization service
 /// This follows the Single Responsibility Principle - handles only summarization logic
 /// Future integration with Hugging Face API will happen here without affecting other layers
+/// Now enhanced with actual URL content extraction for Day 5
 /// </summary>
 public class SummarizationService : ISummarizationService
 {
     private readonly ILogger<SummarizationService> _logger;
     private readonly HttpClient _httpClient;
+    private readonly IUrlContentExtractor _urlContentExtractor;
 
     /// <summary>
     /// Constructor demonstrates Dependency Injection principle
     /// Dependencies are injected rather than created internally
+    /// Now includes URL content extraction service for Day 5 functionality
     /// </summary>
-    public SummarizationService(ILogger<SummarizationService> logger, HttpClient httpClient)
+    public SummarizationService(
+        ILogger<SummarizationService> logger, 
+        HttpClient httpClient,
+        IUrlContentExtractor urlContentExtractor)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _urlContentExtractor = urlContentExtractor ?? throw new ArgumentNullException(nameof(urlContentExtractor));
     }
 
     /// <summary>
     /// Summarizes plain text content
     /// Currently returns a mock response - will be replaced with Hugging Face integration
+    /// Day 4 functionality - already complete and working
     /// </summary>
     public async Task<SummarizationResponse> SummarizeTextAsync(string content, CancellationToken cancellationToken = default)
     {
@@ -51,7 +59,7 @@ public class SummarizationService : ISummarizationService
             // Simulate processing time for realistic user experience
             await Task.Delay(1500, cancellationToken);
 
-            // TODO: Replace with actual Hugging Face API call
+            // TODO: Replace with actual Hugging Face API call (planned for future days)
             var mockSummary = GenerateMockSummary(content, "text");
 
             _logger.LogInformation("Text summarization completed successfully");
@@ -84,6 +92,7 @@ public class SummarizationService : ISummarizationService
 
     /// <summary>
     /// Summarizes content from a URL
+    /// Day 5 implementation - now uses actual URL content extraction
     /// Demonstrates separation of concerns - URL extraction vs summarization
     /// </summary>
     public async Task<SummarizationResponse> SummarizeUrlAsync(string url, CancellationToken cancellationToken = default)
@@ -105,12 +114,32 @@ public class SummarizationService : ISummarizationService
                 };
             }
 
-            // Simulate URL content extraction and processing
-            await Task.Delay(2500, cancellationToken);
+            // Day 5 Implementation: Extract actual content from URL using Mozilla Readability
+            _logger.LogInformation("Extracting content from URL...");
+            var extractionResult = await _urlContentExtractor.ExtractContentAsync(url, cancellationToken);
 
-            // TODO: Implement actual URL content extraction (ScrapingBee API or Mozilla Readability)
-            // TODO: Then pass extracted content to Hugging Face summarization API
-            var mockSummary = GenerateMockSummary(url, "url");
+            if (!extractionResult.Success)
+            {
+                _logger.LogWarning("URL content extraction failed: {ErrorMessage}", extractionResult.ErrorMessage);
+                return new SummarizationResponse
+                {
+                    Success = false,
+                    ErrorMessage = extractionResult.ErrorMessage,
+                    ProcessedContentType = "url"
+                };
+            }
+
+            _logger.LogInformation("Successfully extracted {ContentLength} characters from URL. Title: {Title}", 
+                extractionResult.Content.Length, 
+                LogSanitizer.SanitizeAndTruncate(extractionResult.Title, 100));
+
+            // Now process the extracted content as text (reuse text processing logic)
+            // Simulate processing time for realistic user experience
+            await Task.Delay(1500, cancellationToken);
+
+            // TODO: Replace with actual Hugging Face API call (planned for future days)
+            // For now, generate mock summary based on extracted content
+            var mockSummary = GenerateMockSummaryFromExtraction(extractionResult);
 
             _logger.LogInformation("URL summarization completed successfully");
 
@@ -143,6 +172,7 @@ public class SummarizationService : ISummarizationService
     /// <summary>
     /// Validates content based on type
     /// Follows Single Responsibility - isolated validation logic
+    /// Unchanged from original implementation - already working well
     /// </summary>
     public (bool IsValid, string ErrorMessage) ValidateContent(string content, string contentType)
     {
@@ -182,6 +212,7 @@ public class SummarizationService : ISummarizationService
     /// <summary>
     /// Generates mock summary for development purposes
     /// Will be removed when real AI integration is implemented
+    /// Unchanged from original - still needed for Day 4/5 pipeline validation
     /// </summary>
     private static string GenerateMockSummary(string content, string contentType)
     {
@@ -192,5 +223,42 @@ public class SummarizationService : ISummarizationService
                "The summary demonstrates the successful communication between your React frontend and C# backend API. " +
                "In the next development phase, this will be replaced with actual AI-powered summarization using the " +
                "Hugging Face facebook/bart-large-cnn model, providing intelligent, concise summaries of your content.";
+    }
+
+    /// <summary>
+    /// Generates mock summary specifically for extracted URL content
+    /// Day 5 enhancement - shows that URL extraction is working
+    /// Includes extracted metadata to demonstrate successful content extraction
+    /// </summary>
+    private static string GenerateMockSummaryFromExtraction(UrlExtractionResult extractionResult)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        
+        var summary = $"[Generated at {timestamp}] Successfully extracted and summarized content from: {extractionResult.SourceUrl}\n\n";
+        
+        if (!string.IsNullOrWhiteSpace(extractionResult.Title))
+        {
+            summary += $"Article Title: {extractionResult.Title}\n";
+        }
+        
+        if (!string.IsNullOrWhiteSpace(extractionResult.Author))
+        {
+            summary += $"Author: {extractionResult.Author}\n";
+        }
+        
+        summary += $"\nContent Length: {extractionResult.Content.Length} characters\n";
+        summary += $"Extraction Time: {extractionResult.ExtractedAt:yyyy-MM-dd HH:mm:ss} UTC\n\n";
+        
+        summary += "This demonstrates successful URL content extraction using Mozilla Readability algorithm. ";
+        summary += "The extracted content is now ready for AI-powered summarization, which will be implemented in the next development phase using ";
+        summary += "the Hugging Face facebook/bart-large-cnn model.\n\n";
+        
+        // Include a snippet of the actual extracted content to show it's working
+        var contentPreview = extractionResult.Content.Length > 200 
+            ? extractionResult.Content.Substring(0, 200) + "..." 
+            : extractionResult.Content;
+        summary += $"Content Preview: {contentPreview}";
+
+        return summary;
     }
 }

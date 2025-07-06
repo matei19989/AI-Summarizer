@@ -8,13 +8,24 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // Register HttpClient for external API calls
+// Shared HttpClient configuration for both summarization and URL extraction services
 builder.Services.AddHttpClient<ISummarizationService, SummarizationService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/1.0");
 });
 
-// Register our custom services
+// Day 5 Addition: Register HttpClient for URL content extraction
+// Separate HttpClient configuration for URL extraction to allow different timeout settings
+builder.Services.AddHttpClient<IUrlContentExtractor, UrlContentExtractor>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15); // Shorter timeout for URL validation
+    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/1.0 (Content Extractor)");
+});
+
+// Register our custom services following existing DI patterns
+// Day 5 Addition: Register URL content extraction service
+builder.Services.AddScoped<IUrlContentExtractor, UrlContentExtractor>();
 builder.Services.AddScoped<ISummarizationService, SummarizationService>();
 
 // Configure CORS for React frontend
@@ -57,7 +68,8 @@ app.MapGet("/", () => new
     Application = "AI Content Summarizer API",
     Version = "1.0.0",
     Status = "Running",
-    Timestamp = DateTime.UtcNow
+    Timestamp = DateTime.UtcNow,
+    Features = new[] { "Text Summarization", "URL Content Extraction" } // Day 5 enhancement
 });
 
 app.Run();
