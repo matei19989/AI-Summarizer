@@ -36,7 +36,7 @@ export const useSummarization = () => {
       const result = await SummarizationService.summarizeContent(inputContent, inputMode);
       setOutputContent(result.summary);
       setHasAudio(result.hasAudio);
-    } catch (err) {
+    } catch (error) {
       setError('Failed to generate summary. Please try again.');
       setHasAudio(false);
     } finally {
