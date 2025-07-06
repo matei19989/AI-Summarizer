@@ -1,0 +1,101 @@
+# ===================================================================
+# Docker Compose for Production Environment
+# Clean, secure two-service setup optimized for production deployment
+# ===================================================================
+
+version: '3.8'
+
+services:
+  # Backend API Service - Production Configuration
+  backend:
+    build:
+      context: ./AISummarizerAPI
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ai-summarizer-api
+    # DO NOT expose backend port directly in production
+    # Frontend nginx will proxy API requests - this is more secure
+    expose:
+      - "5088"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5088
+      # Production security settings
+      - ASPNETCORE_DETAILEDERRORS=false
+      - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Warning
+      - ASPNETCORE_LOGGING__LOGLEVEL__MICROSOFT=Warning
+      - ASPNETCORE_LOGGING__LOGLEVEL__SYSTEM=Warning
+    # Production volumes - minimal and secure
+    volumes:
+      - ./logs:/app/logs:rw
+      - /etc/ssl/certs:/etc/ssl/certs:ro  # Mount system CA certificates
+    networks:
+      - ai-summarizer-network
+    # Resource limits for production stability
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'      # Limit to 1 CPU core
+          memory: 1G       # Limit to 1GB RAM
+        reservations:
+          cpus: '0.5'      # Reserve 0.5 CPU cores
+          memory: 512M     # Reserve 512MB RAM
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5088/api/summarization/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    # Security: read-only root filesystem with specific writable paths
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+
+  # Frontend Service - Production Configuration
+  frontend:
+    build:
+      context: ./ai-summarizer-frontend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ai-summarizer-frontend
+    ports:
+      - "80:80"      # Standard HTTP port
+      - "443:443"    # Standard HTTPS port (if SSL configured)
+    environment:
+      # In production, API calls go through nginx proxy
+      - VITE_API_BASE_URL=/api
+    networks:
+      - ai-summarizer-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Resource limits for frontend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+
+# Production network configuration - isolated and secure
+networks:
+  ai-summarizer-network:
+    driver: bridge
+    name: ai-summarizer-prod

@@ -1,0 +1,86 @@
+# ===================================================================
+# .dockerignore for ASP.NET Core Backend
+# Excludes unnecessary files from Docker build context
+# This improves build speed and security
+# ===================================================================
+
+# Build outputs - these are generated during the Docker build
+bin/
+obj/
+out/
+publish/
+
+# Visual Studio and development files
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+.idea/
+
+# Package manager files - we restore these in Dockerfile
+packages/
+*.nupkg
+*.snupkg
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+
+# Test results
+TestResults/
+test-results.xml
+coverage/
+
+# Environment and secrets - NEVER include these in Docker images
+.env
+.env.*
+appsettings.*.json
+secrets.json
+*.key
+*.pem
+*.pfx
+
+# Runtime and cache files
+*.pid
+*.seed
+*.pid.lock
+.cache/
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# Documentation and markdown (not needed in runtime)
+*.md
+README*
+CHANGELOG*
+LICENSE*
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Docker files themselves
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD files
+.github/
+azure-pipelines.yml
+*.yml
+*.yaml
+
+# Large files that shouldn't be in containers
+*.iso
+*.dmg
+*.pkg
+*.deb
+*.rpm
