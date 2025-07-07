@@ -1,95 +1,104 @@
 // AISummarizerAPI/Program.cs
 using AISummarizerAPI.Configuration;
+
+// Core interfaces - these define our business capabilities
+using AISummarizerAPI.Core.Interfaces;
+
+// Application layer - orchestration and use cases
+using AISummarizerAPI.Application.Interfaces;
+using AISummarizerAPI.Application.Services;
+
+// Infrastructure layer - concrete implementations
+using AISummarizerAPI.Infrastructure.Services;
+
+// Legacy interfaces that we're keeping for the HuggingFace integration
 using AISummarizerAPI.Services.Interfaces;
 using AISummarizerAPI.Services.Implementations;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ===================================================================
-// Configuration Setup
+// Configuration Setup (unchanged - this part was already good)
 // ===================================================================
 
-// Configure Hugging Face API options from appsettings.json and user secrets
 builder.Services.Configure<HuggingFaceOptions>(
     builder.Configuration.GetSection(HuggingFaceOptions.SectionName));
 
-// Validate configuration at startup to catch issues early
 builder.Services.AddOptions<HuggingFaceOptions>()
     .Bind(builder.Configuration.GetSection(HuggingFaceOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
 // ===================================================================
-// Core Services
+// Core Services Registration - The New Architecture
 // ===================================================================
 
-// Add controllers and OpenAPI support
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+// Register our domain services following the new architecture
+// Notice how we're programming to interfaces, not implementations
+// This makes our system incredibly flexible and testable
+
+// Core business services - each with a single, focused responsibility
+builder.Services.AddScoped<IContentValidator, ContentValidationService>();
+builder.Services.AddScoped<IResponseFormatter, ResponseFormatterService>();
+
+// Infrastructure services - these handle external dependencies
+builder.Services.AddScoped<IContentSummarizer, HuggingFaceContentSummarizer>();
+builder.Services.AddScoped<IContentExtractor, SmartReaderContentExtractor>();
+
+// Application layer - this is our use case orchestrator
+// This is the heart of our new architecture - it coordinates everything
+builder.Services.AddScoped<ISummarizationOrchestrator, SummarizationOrchestrator>();
+
+// Legacy services that our new infrastructure services depend on
+// We keep these because they contain well-tested, working logic
+// Eventually, we might refactor these further, but for now they serve us well
+builder.Services.AddScoped<IHuggingFaceApiClient, HuggingFaceApiClient>();
 
 // ===================================================================
-// HTTP Client Configuration
+// HTTP Client Configuration (unchanged - this part was already excellent)
 // ===================================================================
 
-// HTTP client for SummarizationService (existing functionality)
-// Used for URL content extraction and general HTTP operations
-builder.Services.AddHttpClient<ISummarizationService, SummarizationService>(client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/1.0");
-});
-
-// HTTP client for URL content extraction (existing functionality)
-// Separate client with different timeout settings for URL validation
-builder.Services.AddHttpClient<IUrlContentExtractor, UrlContentExtractor>(client =>
+// HTTP client for general HTTP operations (used by content validator and extractor)
+builder.Services.AddHttpClient<IContentValidator, ContentValidationService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
-    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/1.0 (Content Extractor)");
+    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/2.0 (Content Validator)");
 });
 
-// NEW: HTTP client for Hugging Face API communication
-// Configured specifically for AI API calls with longer timeouts
+// HTTP client for URL content extraction
+builder.Services.AddHttpClient<IContentExtractor, SmartReaderContentExtractor>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/2.0 (Content Extractor)");
+});
+
+// HTTP client for Hugging Face API communication
 builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((serviceProvider, client) =>
 {
     var huggingFaceOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     
-    // Configure timeout from options
     client.Timeout = TimeSpan.FromSeconds(huggingFaceOptions.RateLimit.TimeoutSeconds);
-    
-    // Set base address for Hugging Face API
     client.BaseAddress = new Uri(huggingFaceOptions.BaseUrl);
     
-    // Add authentication header if token is configured
     if (!string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
     {
         client.DefaultRequestHeaders.Authorization = 
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", huggingFaceOptions.ApiToken);
     }
     
-    // Set user agent for API identification
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("AISummarizer/1.0 (Hugging Face Integration)");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AISummarizer/2.0 (Hugging Face Integration)");
 });
 
 // ===================================================================
-// Service Registration
+// Framework Services (unchanged)
 // ===================================================================
 
-// Register existing services (URL content extraction)
-builder.Services.AddScoped<IUrlContentExtractor, UrlContentExtractor>();
-
-// NEW: Register Hugging Face API client
-// This service handles all communication with Hugging Face APIs
-builder.Services.AddScoped<IHuggingFaceApiClient, HuggingFaceApiClient>();
-
-// Register main summarization service (now enhanced with AI)
-// This orchestrates between URL extraction and AI summarization
-builder.Services.AddScoped<ISummarizationService, SummarizationService>();
+builder.Services.AddControllers();
+builder.Services.AddOpenApi();
 
 // ===================================================================
-// CORS Configuration
+// CORS Configuration (unchanged)
 // ===================================================================
-
-// Enhanced CORS configuration for both development and production
 
 builder.Services.AddCors(options =>
 {
@@ -97,14 +106,13 @@ builder.Services.AddCors(options =>
     {
         if (builder.Environment.IsDevelopment())
         {
-            // Development: Allow common dev server origins
             corsBuilder
                 .WithOrigins(
-                    "http://localhost:3000",    // React dev server
-                    "http://localhost:5173",    // Vite dev server
-                    "http://localhost:4173",    // Vite preview
-                    "http://frontend:80",       // Docker development
-                    "http://localhost:80"       // Docker host access
+                    "http://localhost:3000",
+                    "http://localhost:5173",
+                    "http://localhost:4173",
+                    "http://frontend:80",
+                    "http://localhost:80"
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
@@ -112,13 +120,12 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            // Production: More restrictive
             corsBuilder
                 .WithOrigins(
-                    "http://frontend:80",       // Docker internal communication
-                    "http://localhost:80",      // Docker host access
-                    "https://localhost:443",    // If SSL enabled
-                    "https://yourdomain.com"    // Replace with your actual domain
+                    "http://frontend:80",
+                    "http://localhost:80",
+                    "https://localhost:443",
+                    "https://yourdomain.com"
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
@@ -133,16 +140,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     
-    // In development, log the configuration for debugging
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Application starting in Development mode");
+    logger.LogInformation("Application starting in Development mode with new Clean Architecture");
     
-    // Log Hugging Face configuration status (without exposing sensitive data)
     var huggingFaceOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     logger.LogInformation("Hugging Face API configured: BaseUrl={BaseUrl}, HasToken={HasToken}, Model={Model}", 
         huggingFaceOptions.BaseUrl,
@@ -150,21 +154,15 @@ if (app.Environment.IsDevelopment())
         huggingFaceOptions.Models.SummarizationModel);
 }
 
-// Apply CORS policy before other middleware
 app.UseCors("ReactPolicy");
-
-// Security and routing
 app.UseHttpsRedirection();
 app.UseAuthorization();
-
-// Map controller routes
 app.MapControllers();
 
 // ===================================================================
-// Root Endpoint with Enhanced Information
+// Enhanced Root Endpoint - Shows Our New Architecture
 // ===================================================================
 
-// Enhanced root endpoint showing new AI capabilities
 app.MapGet("/", (IServiceProvider serviceProvider) =>
 {
     var huggingFaceOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
@@ -172,17 +170,31 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
     return new
     {
         Application = "AI Content Summarizer API",
-        Version = "2.0.0", // Incremented version to reflect AI integration
+        Version = "2.0.0", // Updated to reflect our architectural improvements
+        Architecture = "Clean Architecture with Domain-Driven Design",
         Status = "Running",
         Timestamp = DateTime.UtcNow,
+        
         Features = new[] 
         { 
-            "Text Summarization with AI", 
-            "URL Content Extraction", 
-            "Hugging Face Integration",
-            "Rate Limited API Calls",
-            "Real-time AI Processing"
+            "AI-Powered Text Summarization", 
+            "Intelligent URL Content Extraction", 
+            "Comprehensive Input Validation",
+            "Extensible Service Architecture",
+            "Real-time Processing with Cancellation Support",
+            "Robust Error Handling and User Feedback"
         },
+        
+        Architecture_Benefits = new[]
+        {
+            "Single Responsibility Principle - Each service has one clear job",
+            "Interface Segregation - Clean, focused interfaces", 
+            "Dependency Inversion - Program to abstractions, not concretions",
+            "Separation of Concerns - Business logic isolated from infrastructure",
+            "Testability - Each component can be easily unit tested",
+            "Extensibility - Easy to add new AI providers or content sources"
+        },
+        
         AI = new
         {
             Provider = "Hugging Face",
@@ -190,6 +202,7 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
             IsConfigured = !string.IsNullOrEmpty(huggingFaceOptions.ApiToken),
             RateLimit = $"{huggingFaceOptions.RateLimit.RequestsPerMinute} requests/minute"
         },
+        
         Endpoints = new
         {
             Summarize = "/api/summarization/summarize",
@@ -200,52 +213,47 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
 });
 
 // ===================================================================
-// Startup Validation and Health Checks
+// Startup Validation with Enhanced Architecture Awareness
 // ===================================================================
 
-// Validate critical configuration at startup
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    // Test our new orchestrator to make sure everything is wired up correctly
+    try
+    {
+        var orchestrator = scope.ServiceProvider.GetRequiredService<ISummarizationOrchestrator>();
+        var isHealthy = await orchestrator.IsHealthyAsync();
+        
+        if (isHealthy)
+        {
+            logger.LogInformation("✅ New Clean Architecture successfully initialized - all services are healthy");
+        }
+        else
+        {
+            logger.LogWarning("⚠️ Some services are not available - check AI provider configuration");
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "❌ Error testing new architecture initialization");
+    }
+    
+    // Validate configuration as before
     var huggingFaceOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     
-    // Warn if Hugging Face token is not configured
     if (string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
     {
         logger.LogWarning("Hugging Face API token is not configured. Set 'HuggingFace:ApiToken' in user secrets or environment variables.");
-        logger.LogWarning("Without an API token, the application will use mock responses for development.");
     }
     else
     {
         logger.LogInformation("Hugging Face API token is configured. Real AI summarization is enabled.");
     }
-    
-    // Test Hugging Face API connection if token is available
-    if (!string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
-    {
-        try
-        {
-            var huggingFaceClient = scope.ServiceProvider.GetRequiredService<IHuggingFaceApiClient>();
-            var connectionTest = await huggingFaceClient.TestConnectionAsync();
-            
-            if (connectionTest)
-            {
-                logger.LogInformation("✅ Hugging Face API connection test successful");
-            }
-            else
-            {
-                logger.LogWarning("⚠️ Hugging Face API connection test failed - check your token and network connectivity");
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "❌ Error testing Hugging Face API connection");
-        }
-    }
 }
 
-// Get logger after app is built and log startup message
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
-startupLogger.LogInformation("🚀 AI Content Summarizer API is starting with enhanced AI capabilities...");
+startupLogger.LogInformation("🚀 AI Content Summarizer API v2.0 is starting with Clean Architecture and enhanced capabilities...");
 
 app.Run();
