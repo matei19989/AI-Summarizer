@@ -108,7 +108,7 @@ jobs:
         run: |
           echo "🧪 Testing container startup..."
           # Pull the image we just built
-          docker pull ${{ needs.build-and-push-backend.outputs.image-tag }}
+          docker pull ghcr.io/matei1998/aisummarizer-backend:latest
           
           # Run container in background
           docker run -d --name test-container -p 8080:80 \
