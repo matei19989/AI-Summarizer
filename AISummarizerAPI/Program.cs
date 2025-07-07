@@ -26,7 +26,7 @@ using Microsoft.Extensions.Http;
 var builder = WebApplication.CreateBuilder(args);
 
 // ===================================================================
-// Configuration Setup
+// Configuration Setup (unchanged - this part was already good)
 // ===================================================================
 
 builder.Services.Configure<HuggingFaceOptions>(
@@ -38,6 +38,7 @@ builder.Services.AddOptions<HuggingFaceOptions>()
     .ValidateOnStart();
 
 // ===================================================================
+<<<<<<< HEAD
 // Core Services Registration
 // ===================================================================
 
@@ -86,10 +87,56 @@ builder.Services.AddHttpClient<IContentExtractor, SmartReaderContentExtractor>(c
 });
 
 // Special configuration for Hugging Face API client - this is the critical one
+=======
+// Core Services Registration - The New Architecture
+// ===================================================================
+
+// Register our domain services following the new architecture
+// Notice how we're programming to interfaces, not implementations
+// This makes our system incredibly flexible and testable
+
+// Core business services - each with a single, focused responsibility
+builder.Services.AddScoped<IContentValidator, ContentValidationService>();
+builder.Services.AddScoped<IResponseFormatter, ResponseFormatterService>();
+
+// Infrastructure services - these handle external dependencies
+builder.Services.AddScoped<IContentSummarizer, HuggingFaceContentSummarizer>();
+builder.Services.AddScoped<IContentExtractor, SmartReaderContentExtractor>();
+
+// Application layer - this is our use case orchestrator
+// This is the heart of our new architecture - it coordinates everything
+builder.Services.AddScoped<ISummarizationOrchestrator, SummarizationOrchestrator>();
+
+// Legacy services that our new infrastructure services depend on
+// We keep these because they contain well-tested, working logic
+// Eventually, we might refactor these further, but for now they serve us well
+builder.Services.AddScoped<IHuggingFaceApiClient, HuggingFaceApiClient>();
+
+// ===================================================================
+// HTTP Client Configuration (unchanged - this part was already excellent)
+// ===================================================================
+
+// HTTP client for general HTTP operations (used by content validator and extractor)
+builder.Services.AddHttpClient<IContentValidator, ContentValidationService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/2.0 (Content Validator)");
+});
+
+// HTTP client for URL content extraction
+builder.Services.AddHttpClient<IContentExtractor, SmartReaderContentExtractor>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/2.0 (Content Extractor)");
+});
+
+// HTTP client for Hugging Face API communication
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
 builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((serviceProvider, client) =>
 {
     var huggingFaceOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     
+<<<<<<< HEAD
     /*
      * Timeout Strategy for AI APIs:
      * - We use a longer timeout because AI processing inherently takes time
@@ -97,6 +144,9 @@ builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((ser
      * - This gives us maximum flexibility to handle different types of delays
      */
     client.Timeout = TimeSpan.FromSeconds(120); // Increased from 45 to 120 seconds for AI processing
+=======
+    client.Timeout = TimeSpan.FromSeconds(huggingFaceOptions.RateLimit.TimeoutSeconds);
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
     client.BaseAddress = new Uri(huggingFaceOptions.BaseUrl);
     
     if (!string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
@@ -106,6 +156,7 @@ builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((ser
     }
     
     client.DefaultRequestHeaders.UserAgent.ParseAdd("AISummarizer/2.0 (Hugging Face Integration)");
+<<<<<<< HEAD
     
     /*
      * Connection optimization headers:
@@ -153,13 +204,23 @@ builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((ser
 
 // ===================================================================
 // Framework Services
+=======
+});
+
+// ===================================================================
+// Framework Services (unchanged)
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
 // ===================================================================
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // ===================================================================
+<<<<<<< HEAD
 // CORS Configuration - Azure Production Ready
+=======
+// CORS Configuration (unchanged)
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
 // ===================================================================
 
 builder.Services.AddCors(options =>
@@ -187,7 +248,12 @@ builder.Services.AddCors(options =>
                     "http://localhost:3000",
                     "http://localhost:5173",
                     "http://localhost:4173",
+<<<<<<< HEAD
                     "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app"
+=======
+                    "http://frontend:80",
+                    "http://localhost:80"
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
@@ -197,8 +263,15 @@ builder.Services.AddCors(options =>
         {
             corsBuilder
                 .WithOrigins(
+<<<<<<< HEAD
                     "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app",
                     "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net"
+=======
+                    "http://frontend:80",
+                    "http://localhost:80",
+                    "https://localhost:443",
+                    "https://yourdomain.com"
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
@@ -216,6 +289,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+<<<<<<< HEAD
 }
 
 // IMPORTANT: CORS must come before other middleware
@@ -234,12 +308,30 @@ if (app.Environment.IsProduction())
     });
 }
 
+=======
+    
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Application starting in Development mode with new Clean Architecture");
+    
+    var huggingFaceOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
+    logger.LogInformation("Hugging Face API configured: BaseUrl={BaseUrl}, HasToken={HasToken}, Model={Model}", 
+        huggingFaceOptions.BaseUrl,
+        !string.IsNullOrEmpty(huggingFaceOptions.ApiToken),
+        huggingFaceOptions.Models.SummarizationModel);
+}
+
+app.UseCors("ReactPolicy");
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
 // ===================================================================
+<<<<<<< HEAD
 // Enhanced Root Endpoint for Azure Monitoring
+=======
+// Enhanced Root Endpoint - Shows Our New Architecture
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
 // ===================================================================
 
 app.MapGet("/", (IServiceProvider serviceProvider) =>
@@ -249,6 +341,7 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
     return new
     {
         Application = "AI Content Summarizer API",
+<<<<<<< HEAD
         Version = "2.0.1-Azure-Enhanced",
         Environment = app.Environment.EnvironmentName,
         Status = "Running with Enhanced Network Resilience",
@@ -263,6 +356,33 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
             ConnectionManagement = "Optimized for cloud-to-cloud communication"
         },
         
+=======
+        Version = "2.0.0", // Updated to reflect our architectural improvements
+        Architecture = "Clean Architecture with Domain-Driven Design",
+        Status = "Running",
+        Timestamp = DateTime.UtcNow,
+        
+        Features = new[] 
+        { 
+            "AI-Powered Text Summarization", 
+            "Intelligent URL Content Extraction", 
+            "Comprehensive Input Validation",
+            "Extensible Service Architecture",
+            "Real-time Processing with Cancellation Support",
+            "Robust Error Handling and User Feedback"
+        },
+        
+        Architecture_Benefits = new[]
+        {
+            "Single Responsibility Principle - Each service has one clear job",
+            "Interface Segregation - Clean, focused interfaces", 
+            "Dependency Inversion - Program to abstractions, not concretions",
+            "Separation of Concerns - Business logic isolated from infrastructure",
+            "Testability - Each component can be easily unit tested",
+            "Extensibility - Easy to add new AI providers or content sources"
+        },
+        
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
         AI = new
         {
             Provider = "Hugging Face",
@@ -281,13 +401,21 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
 });
 
 // ===================================================================
+<<<<<<< HEAD
 // Startup Validation for Azure Deployment
+=======
+// Startup Validation with Enhanced Architecture Awareness
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
 // ===================================================================
 
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
+<<<<<<< HEAD
+=======
+    // Test our new orchestrator to make sure everything is wired up correctly
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
     try
     {
         var orchestrator = scope.ServiceProvider.GetRequiredService<ISummarizationOrchestrator>();
@@ -295,31 +423,55 @@ using (var scope = app.Services.CreateScope())
         
         if (isHealthy)
         {
+<<<<<<< HEAD
             logger.LogInformation("✅ Azure deployment with enhanced networking is healthy");
         }
         else
         {
             logger.LogWarning("⚠️ Some services are not available - will retry with resilience policies");
+=======
+            logger.LogInformation("✅ New Clean Architecture successfully initialized - all services are healthy");
+        }
+        else
+        {
+            logger.LogWarning("⚠️ Some services are not available - check AI provider configuration");
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
         }
     }
     catch (Exception ex)
     {
+<<<<<<< HEAD
         logger.LogError(ex, "❌ Error during startup - resilience policies will handle runtime issues");
     }
     
+=======
+        logger.LogError(ex, "❌ Error testing new architecture initialization");
+    }
+    
+    // Validate configuration as before
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
     var huggingFaceOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     
     if (string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
     {
+<<<<<<< HEAD
         logger.LogWarning("⚠️ Hugging Face API token is not configured in Azure App Settings");
     }
     else
     {
         logger.LogInformation("✅ Hugging Face API token is configured in Azure");
+=======
+        logger.LogWarning("Hugging Face API token is not configured. Set 'HuggingFace:ApiToken' in user secrets or environment variables.");
+    }
+    else
+    {
+        logger.LogInformation("Hugging Face API token is configured. Real AI summarization is enabled.");
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
     }
 }
 
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+<<<<<<< HEAD
 startupLogger.LogInformation("🚀 AI Content Summarizer API v2.0.1 is running on Azure with enhanced resilience");
 
 app.Run();
@@ -378,3 +530,8 @@ static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
                 Console.WriteLine($"✅ Circuit breaker CLOSED for Hugging Face API. Normal operation resumed.");
             });
 }
+=======
+startupLogger.LogInformation("🚀 AI Content Summarizer API v2.0 is starting with Clean Architecture and enhanced capabilities...");
+
+app.Run();
+>>>>>>> 7f172db8313a28ec7b013c78681e167598662f36
