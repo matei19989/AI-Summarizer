@@ -186,7 +186,13 @@ jobs:
       
       # Test that our docker-compose configuration works
       - name: Test Docker Compose stack
+        env:
+          # Pass the Hugging Face token from GitHub secrets
+          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
         run: |
+          # Export token in the format expected by the .NET backend
+          export HuggingFace__ApiToken=$HUGGINGFACE_API_TOKEN
+          
           # Build images locally for testing
           docker compose -f docker-compose.dev.yml build
           
@@ -202,11 +208,19 @@ jobs:
           # Test frontend accessibility
           curl -f http://localhost:3000/health || exit 1
           
-          # Test API integration
-          curl -X POST http://localhost:5088/api/summarization/summarize \
+          # Test API integration with real AI summarization
+          echo "Testing API with real Hugging Face token..."
+          response=$(curl -X POST http://localhost:5088/api/summarization/summarize \
             -H "Content-Type: application/json" \
-            -d '{"Content": "This is a test content for summarization testing in our CI/CD pipeline. It needs to be long enough to pass validation.", "ContentType": "text"}' \
-            | grep -q "summary" || exit 1
+            -d '{"Content": "This is a comprehensive test content for summarization testing in our CI/CD pipeline. The content needs to be sufficiently long to pass validation requirements and to generate a meaningful summary response from the AI model. This tests the integration between our backend API and the Hugging Face summarization service.", "ContentType": "text"}')
+          
+          echo "API Response: $response"
+          
+          # Check if response contains a summary
+          echo "$response" | grep -q "summary" || exit 1
+          
+          # Additional check to ensure it's not an error response
+          echo "$response" | grep -qv "error\|Error\|ERROR" || exit 1
       
       # Clean up test environment
       - name: Clean up
