@@ -36,8 +36,6 @@ on:
 # Environment variables used across all jobs
 env:
   REGISTRY: ghcr.io
-  # Using GitHub repository owner and name for consistent naming
-  IMAGE_NAME: ${{ github.repository }}
 
 # Default permissions for security (principle of least privilege)
 permissions:
@@ -49,6 +47,8 @@ jobs:
   # Job 1: Build and test backend Docker image
   build-backend:
     runs-on: ubuntu-latest
+    outputs:
+      image-name: ${{ steps.image.outputs.image-name }}
     
     steps:
       - name: Checkout repository
@@ -72,13 +72,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      # Convert repository name to lowercase for Docker compatibility
+      - name: Generate image name
+        id: image
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated image name: ${IMAGE_NAME}"
+      
       # Extract metadata for Docker tags and labels
       # Fixed tagging to avoid invalid tag formats
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/backend
           tags: |
             # Tag with branch name for branches
             type=ref,event=branch
@@ -112,6 +120,8 @@ jobs:
   # Job 2: Build and test frontend Docker image
   build-frontend:
     runs-on: ubuntu-latest
+    outputs:
+      image-name: ${{ steps.image.outputs.image-name }}
     
     steps:
       - name: Checkout repository
@@ -128,11 +138,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      # Convert repository name to lowercase for Docker compatibility
+      - name: Generate image name
+        id: image
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated image name: ${IMAGE_NAME}"
+      
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/frontend
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -168,7 +186,13 @@ jobs:
       
       # Test that our docker-compose configuration works
       - name: Test Docker Compose stack
+        env:
+          # Pass the Hugging Face token from GitHub secrets
+          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
         run: |
+          # Export token in the format expected by the .NET backend
+          export HuggingFace__ApiToken=$HUGGINGFACE_API_TOKEN
+          
           # Build images locally for testing
           docker compose -f docker-compose.dev.yml build
           
@@ -184,11 +208,19 @@ jobs:
           # Test frontend accessibility
           curl -f http://localhost:3000/health || exit 1
           
-          # Test API integration
-          curl -X POST http://localhost:5088/api/summarization/summarize \
+          # Test API integration with real AI summarization
+          echo "Testing API with real Hugging Face token..."
+          response=$(curl -X POST http://localhost:5088/api/summarization/summarize \
             -H "Content-Type: application/json" \
-            -d '{"Content": "This is a test content for summarization testing in our CI/CD pipeline. It needs to be long enough to pass validation.", "ContentType": "text"}' \
-            | grep -q "summary" || exit 1
+            -d '{"Content": "This is a comprehensive test content for summarization testing in our CI/CD pipeline. The content needs to be sufficiently long to pass validation requirements and to generate a meaningful summary response from the AI model. This tests the integration between our backend API and the Hugging Face summarization service.", "ContentType": "text"}')
+          
+          echo "API Response: $response"
+          
+          # Check if response contains a summary
+          echo "$response" | grep -q "summary" || exit 1
+          
+          # Additional check to ensure it's not an error response
+          echo "$response" | grep -qv "error\|Error\|ERROR" || exit 1
       
       # Clean up test environment
       - name: Clean up
@@ -208,10 +240,17 @@ jobs:
         image: [backend, frontend]
     
     steps:
+      - name: Generate image name
+        id: image
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "Scanning image: ${{ env.REGISTRY }}/${IMAGE_NAME}/${{ matrix.image }}:latest"
+      
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:latest
+          image-ref: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/${{ matrix.image }}:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
       

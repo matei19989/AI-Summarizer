@@ -90,6 +90,7 @@ builder.Services.AddScoped<ISummarizationService, SummarizationService>();
 // ===================================================================
 
 // Enhanced CORS configuration for both development and production
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactPolicy", corsBuilder =>
