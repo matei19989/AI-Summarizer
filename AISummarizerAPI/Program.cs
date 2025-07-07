@@ -1,4 +1,4 @@
-// AISummarizerAPI/Program.cs
+// AISummarizerAPI/Program.cs - Complete Enhanced Version for Azure Deployment
 using AISummarizerAPI.Configuration;
 
 // Core interfaces - these define our business capabilities
@@ -15,10 +15,18 @@ using AISummarizerAPI.Infrastructure.Services;
 using AISummarizerAPI.Services.Interfaces;
 using AISummarizerAPI.Services.Implementations;
 
+// System and networking
+using System.Net;
+
+// Polly resilience libraries
+using Polly;
+using Polly.Extensions.Http;
+using Microsoft.Extensions.Http;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ===================================================================
-// Configuration Setup (unchanged - this part was already good)
+// Configuration Setup
 // ===================================================================
 
 builder.Services.Configure<HuggingFaceOptions>(
@@ -30,54 +38,65 @@ builder.Services.AddOptions<HuggingFaceOptions>()
     .ValidateOnStart();
 
 // ===================================================================
-// Core Services Registration - The New Architecture
+// Core Services Registration
 // ===================================================================
 
-// Register our domain services following the new architecture
-// Notice how we're programming to interfaces, not implementations
-// This makes our system incredibly flexible and testable
-
-// Core business services - each with a single, focused responsibility
 builder.Services.AddScoped<IContentValidator, ContentValidationService>();
 builder.Services.AddScoped<IResponseFormatter, ResponseFormatterService>();
-
-// Infrastructure services - these handle external dependencies
 builder.Services.AddScoped<IContentSummarizer, HuggingFaceContentSummarizer>();
 builder.Services.AddScoped<IContentExtractor, SmartReaderContentExtractor>();
-
-// Application layer - this is our use case orchestrator
-// This is the heart of our new architecture - it coordinates everything
 builder.Services.AddScoped<ISummarizationOrchestrator, SummarizationOrchestrator>();
-
-// Legacy services that our new infrastructure services depend on
-// We keep these because they contain well-tested, working logic
-// Eventually, we might refactor these further, but for now they serve us well
 builder.Services.AddScoped<IHuggingFaceApiClient, HuggingFaceApiClient>();
 
 // ===================================================================
-// HTTP Client Configuration (unchanged - this part was already excellent)
+// Enhanced HTTP Client Configuration for Azure Cloud Environment
 // ===================================================================
 
-// HTTP client for general HTTP operations (used by content validator and extractor)
+/*
+ * Why we need special HTTP client configuration for Azure:
+ * 
+ * 1. Connection Pooling: Azure containers benefit from persistent connections
+ * 2. Timeout Management: Cloud-to-cloud calls need longer, more strategic timeouts
+ * 3. Retry Policies: Network hiccups are more common in cloud environments
+ * 4. Connection Limits: We need to manage how many concurrent connections we use
+ */
+
+// Configure HTTP client for general operations (content validation and extraction)
 builder.Services.AddHttpClient<IContentValidator, ContentValidationService>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(15);
+    client.Timeout = TimeSpan.FromSeconds(30); // Reasonable timeout for validation
     client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/2.0 (Content Validator)");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    // Allow more connections per endpoint for better performance
+    MaxConnectionsPerServer = 10,
+    // Use connection pooling efficiently
+    PooledConnectionLifetime = TimeSpan.FromMinutes(15)
 });
 
-// HTTP client for URL content extraction
 builder.Services.AddHttpClient<IContentExtractor, SmartReaderContentExtractor>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(15);
+    client.Timeout = TimeSpan.FromSeconds(45); // Content extraction can take longer
     client.DefaultRequestHeaders.Add("User-Agent", "AISummarizer/2.0 (Content Extractor)");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
+{
+    MaxConnectionsPerServer = 5
 });
 
-// HTTP client for Hugging Face API communication
+// Special configuration for Hugging Face API client - this is the critical one
 builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((serviceProvider, client) =>
 {
     var huggingFaceOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     
-    client.Timeout = TimeSpan.FromSeconds(huggingFaceOptions.RateLimit.TimeoutSeconds);
+    /*
+     * Timeout Strategy for AI APIs:
+     * - We use a longer timeout because AI processing inherently takes time
+     * - We set this at the HTTP client level, and implement additional retry logic at the service level
+     * - This gives us maximum flexibility to handle different types of delays
+     */
+    client.Timeout = TimeSpan.FromSeconds(120); // Increased from 45 to 120 seconds for AI processing
     client.BaseAddress = new Uri(huggingFaceOptions.BaseUrl);
     
     if (!string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
@@ -87,48 +106,104 @@ builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((ser
     }
     
     client.DefaultRequestHeaders.UserAgent.ParseAdd("AISummarizer/2.0 (Hugging Face Integration)");
-});
+    
+    /*
+     * Connection optimization headers:
+     * - Keep-Alive helps maintain persistent connections
+     * - Connection pooling reduces overhead for subsequent requests
+     */
+    client.DefaultRequestHeaders.ConnectionClose = false;
+    client.DefaultRequestHeaders.Add("Keep-Alive", "timeout=60");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    /*
+     * Advanced connection management for external API calls:
+     * 
+     * MaxConnectionsPerServer: Limits concurrent connections to Hugging Face
+     * This prevents overwhelming their servers and reduces connection competition
+     */
+    MaxConnectionsPerServer = 3,
+
+    /*
+     * PooledConnectionLifetime: How long to keep connections alive
+     * Shorter lifetime ensures we don't hit connection limits, but too short hurts performance
+     * 20 minutes is a good balance for API calls
+     */
+    PooledConnectionLifetime = TimeSpan.FromMinutes(20),
+
+    /*
+     * UseCookies: Disable cookie container for API calls (not needed, saves memory)
+     */
+    UseCookies = false,
+
+    /*
+     * AutomaticDecompression: Enable compression to reduce bandwidth
+     * This can significantly speed up large responses from AI APIs
+     */
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+})
+/*
+ * Polly integration for resilience:
+ * This adds automatic retry and circuit breaker patterns
+ * We'll configure this to handle transient network errors gracefully
+ */
+.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetCircuitBreakerPolicy());
 
 // ===================================================================
-// Framework Services (unchanged)
+// Framework Services
 // ===================================================================
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // ===================================================================
-// CORS Configuration (unchanged)
+// CORS Configuration - Azure Production Ready
 // ===================================================================
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("ReactPolicy", corsBuilder =>
+    options.AddPolicy("ProductionPolicy", corsBuilder =>
     {
-        if (builder.Environment.IsDevelopment())
+        var allowedOrigins = builder.Configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
+        
+        if (!string.IsNullOrEmpty(allowedOrigins))
+        {
+            var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(o => o.Trim())
+                                     .ToArray();
+            
+            corsBuilder
+                .WithOrigins(origins)
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        }
+        else if (builder.Environment.IsDevelopment())
         {
             corsBuilder
                 .WithOrigins(
                     "http://localhost:3000",
                     "http://localhost:5173",
                     "http://localhost:4173",
-                    "http://frontend:80",
-                    "http://localhost:80"
+                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app"
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
                 .AllowCredentials();
         }
         else
-{
-    corsBuilder
-        .WithOrigins(
-            "https://ai-summarizer-42mgq8l01-matei19989s-projects.vercel.app/", // Replace with your actual Vercel URL
-            "https://*.vercel.app"  // Allow all Vercel preview deployments
-        )
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .WithExposedHeaders("Content-Length", "Content-Type");
-}
+        {
+            corsBuilder
+                .WithOrigins(
+                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app",
+                    "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net"
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .WithExposedHeaders("Content-Length", "Content-Type");
+        }
     });
 });
 
@@ -141,24 +216,30 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Application starting in Development mode with new Clean Architecture");
-    
-    var huggingFaceOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
-    logger.LogInformation("Hugging Face API configured: BaseUrl={BaseUrl}, HasToken={HasToken}, Model={Model}", 
-        huggingFaceOptions.BaseUrl,
-        !string.IsNullOrEmpty(huggingFaceOptions.ApiToken),
-        huggingFaceOptions.Models.SummarizationModel);
 }
 
-app.UseCors("ReactPolicy");
+// IMPORTANT: CORS must come before other middleware
+app.UseCors("ProductionPolicy");
+
+// Security headers for production
+if (app.Environment.IsProduction())
+{
+    app.Use(async (context, next) =>
+    {
+        context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+        context.Response.Headers.Append("X-Frame-Options", "DENY");
+        context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+        context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+        await next();
+    });
+}
+
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
 // ===================================================================
-// Enhanced Root Endpoint - Shows Our New Architecture
+// Enhanced Root Endpoint for Azure Monitoring
 // ===================================================================
 
 app.MapGet("/", (IServiceProvider serviceProvider) =>
@@ -168,29 +249,18 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
     return new
     {
         Application = "AI Content Summarizer API",
-        Version = "2.0.0", // Updated to reflect our architectural improvements
-        Architecture = "Clean Architecture with Domain-Driven Design",
-        Status = "Running",
+        Version = "2.0.1-Azure-Enhanced",
+        Environment = app.Environment.EnvironmentName,
+        Status = "Running with Enhanced Network Resilience",
         Timestamp = DateTime.UtcNow,
         
-        Features = new[] 
-        { 
-            "AI-Powered Text Summarization", 
-            "Intelligent URL Content Extraction", 
-            "Comprehensive Input Validation",
-            "Extensible Service Architecture",
-            "Real-time Processing with Cancellation Support",
-            "Robust Error Handling and User Feedback"
-        },
-        
-        Architecture_Benefits = new[]
+        NetworkOptimizations = new
         {
-            "Single Responsibility Principle - Each service has one clear job",
-            "Interface Segregation - Clean, focused interfaces", 
-            "Dependency Inversion - Program to abstractions, not concretions",
-            "Separation of Concerns - Business logic isolated from infrastructure",
-            "Testability - Each component can be easily unit tested",
-            "Extensibility - Easy to add new AI providers or content sources"
+            HttpClientTimeout = "120 seconds",
+            ConnectionPooling = "Enabled",
+            RetryPolicy = "Enabled with exponential backoff",
+            CircuitBreaker = "Enabled (5 failures trigger 30s break)",
+            ConnectionManagement = "Optimized for cloud-to-cloud communication"
         },
         
         AI = new
@@ -211,14 +281,13 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
 });
 
 // ===================================================================
-// Startup Validation with Enhanced Architecture Awareness
+// Startup Validation for Azure Deployment
 // ===================================================================
 
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
-    // Test our new orchestrator to make sure everything is wired up correctly
     try
     {
         var orchestrator = scope.ServiceProvider.GetRequiredService<ISummarizationOrchestrator>();
@@ -226,32 +295,86 @@ using (var scope = app.Services.CreateScope())
         
         if (isHealthy)
         {
-            logger.LogInformation("✅ New Clean Architecture successfully initialized - all services are healthy");
+            logger.LogInformation("✅ Azure deployment with enhanced networking is healthy");
         }
         else
         {
-            logger.LogWarning("⚠️ Some services are not available - check AI provider configuration");
+            logger.LogWarning("⚠️ Some services are not available - will retry with resilience policies");
         }
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "❌ Error testing new architecture initialization");
+        logger.LogError(ex, "❌ Error during startup - resilience policies will handle runtime issues");
     }
     
-    // Validate configuration as before
     var huggingFaceOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     
     if (string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
     {
-        logger.LogWarning("Hugging Face API token is not configured. Set 'HuggingFace:ApiToken' in user secrets or environment variables.");
+        logger.LogWarning("⚠️ Hugging Face API token is not configured in Azure App Settings");
     }
     else
     {
-        logger.LogInformation("Hugging Face API token is configured. Real AI summarization is enabled.");
+        logger.LogInformation("✅ Hugging Face API token is configured in Azure");
     }
 }
 
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
-startupLogger.LogInformation("🚀 AI Content Summarizer API v2.0 is starting with Clean Architecture and enhanced capabilities...");
+startupLogger.LogInformation("🚀 AI Content Summarizer API v2.0.1 is running on Azure with enhanced resilience");
 
 app.Run();
+
+// ===================================================================
+// Resilience Policy Definitions
+// ===================================================================
+
+/*
+ * These policies define how our application handles network failures:
+ * 
+ * Retry Policy: Automatically retries failed requests with exponential backoff
+ * Circuit Breaker: Temporarily stops making requests if too many fail consecutively
+ */
+
+static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+{
+    return Policy
+        .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+        .Or<HttpRequestException>()
+        .Or<TaskCanceledException>()
+        .WaitAndRetryAsync(
+            retryCount: 3,
+            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), // 2, 4, 8 seconds
+            onRetry: (outcome, timespan, retryCount, context) =>
+            {
+                // Log retry attempts for debugging and monitoring
+                Console.WriteLine($"🔄 Retry attempt {retryCount} for Hugging Face API after {timespan.TotalSeconds}s delay");
+                
+                // Additional logging for Azure diagnostics
+                if (outcome.Exception != null)
+                {
+                    Console.WriteLine($"   Reason: {outcome.Exception.GetType().Name} - {outcome.Exception.Message}");
+                }
+                else if (outcome.Result != null)
+                {
+                    Console.WriteLine($"   HTTP Status: {outcome.Result.StatusCode}");
+                }
+            });
+}
+
+static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+{
+    return Policy
+        .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+        .CircuitBreakerAsync(
+            handledEventsAllowedBeforeBreaking: 5,
+            durationOfBreak: TimeSpan.FromSeconds(30),
+            onBreak: (result, timespan) =>
+            {
+                Console.WriteLine($"🚫 Circuit breaker OPENED for Hugging Face API. Will retry after {timespan.TotalSeconds} seconds.");
+                Console.WriteLine("   This protects against cascading failures and gives the external service time to recover.");
+            },
+            onReset: () =>
+            {
+                Console.WriteLine($"✅ Circuit breaker CLOSED for Hugging Face API. Normal operation resumed.");
+            });
+}
