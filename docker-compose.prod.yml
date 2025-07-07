@@ -1,0 +1,137 @@
+# ===================================================================
+# Production Docker Compose Configuration
+# This configuration is optimized for production deployment with:
+# - Enhanced security settings
+# - Resource limits and optimization
+# - Production logging configurations
+# - Minimal exposed ports for security
+# - Production environment variables
+# ===================================================================
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./AISummarizerAPI
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ai-summarizer-api-prod
+    # In production, we don't expose the backend port directly
+    # All traffic goes through the frontend/nginx proxy for security
+    expose:
+      - "5088"
+    environment:
+      # Production environment settings
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5088
+      # Disable detailed errors in production for security
+      - ASPNETCORE_DETAILEDERRORS=false
+      # Production logging - less verbose for performance
+      - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Warning
+      - ASPNETCORE_LOGGING__LOGLEVEL__MICROSOFT=Error
+      - ASPNETCORE_LOGGING__LOGLEVEL__SYSTEM=Error
+      # Hugging Face API token from secure environment variable
+      - HuggingFace__ApiToken=${HUGGINGFACE_API_TOKEN}
+    # Production resource limits - prevent runaway containers
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'          # Limit to 1 CPU core
+          memory: 512M         # Limit to 512MB RAM
+        reservations:
+          cpus: '0.25'         # Reserve at least 0.25 CPU
+          memory: 256M         # Reserve at least 256MB RAM
+    # Production logging strategy - external log management
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"        # Rotate logs at 10MB
+        max-file: "3"          # Keep 3 log files max
+    networks:
+      - ai-summarizer-prod-network
+    # Production health check - more conservative timings
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5088/api/summarization/health || exit 1"]
+      interval: 60s            # Check every minute (less frequent than dev)
+      timeout: 10s
+      retries: 3
+      start_period: 60s        # Give more time to start in production
+    # Production restart policy - always restart unless stopped
+    restart: unless-stopped
+    # Security: Run with non-root user (handled in Dockerfile)
+    # Security: Read-only root filesystem where possible
+    read_only: true
+    tmpfs:
+      - /tmp                   # Temporary files in memory
+      - /var/tmp               # More temporary files in memory
+
+  frontend:
+    build:
+      context: ./ai-summarizer-frontend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ai-summarizer-frontend-prod
+    ports:
+      # Only expose port 80 for the frontend - this is our single entry point
+      - "80:80"
+    environment:
+      # This tells our entrypoint script to use production nginx config
+      - NGINX_ENV=production
+      # Production-specific environment variables for the React app
+      - NODE_ENV=production
+    # Production resource limits for frontend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'          # Frontend needs less CPU than backend
+          memory: 256M         # Frontend needs less memory
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    # Production logging for nginx
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ai-summarizer-prod-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Frontend health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    # Security settings for frontend
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx       # Nginx cache in memory
+      - /var/run               # Runtime files in memory
+      - /tmp                   # Temporary files in memory
+
+# Production network configuration
+networks:
+  ai-summarizer-prod-network:
+    driver: bridge
+    name: ai-summarizer-prod
+    # Production network security - internal subnet
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Production secrets management (for future use)
+# In a real production environment, you'd use Docker secrets or external secret management
+# secrets:
+#   huggingface_token:
+#     external: true
+
+# Production volumes (if needed for persistent data)
+# volumes:
+#   app_logs:
+#     driver: local
