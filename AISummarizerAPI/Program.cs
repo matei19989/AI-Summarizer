@@ -119,16 +119,18 @@ builder.Services.AddCors(options =>
                 .AllowCredentials();
         }
         else
-{
-    corsBuilder
-        .WithOrigins(
-            "https://ai-summarizer-42mgq8l01-matei19989s-projects.vercel.app/", // Replace with your actual Vercel URL
-            "https://*.vercel.app"  // Allow all Vercel preview deployments
-        )
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .WithExposedHeaders("Content-Length", "Content-Type");
-}
+        {
+            corsBuilder
+                .WithOrigins(
+                    "http://frontend:80",
+                    "http://localhost:80",
+                    "https://localhost:443",
+                    "https://yourdomain.com"
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .WithExposedHeaders("Content-Length", "Content-Type");
+        }
     });
 });
 
