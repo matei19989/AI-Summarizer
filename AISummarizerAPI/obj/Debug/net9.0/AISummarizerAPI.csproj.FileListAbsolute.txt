@@ -32,23 +32,6 @@ C:\Users\Matei\Desktop\AI Summarizer\AISummarizerAPI\obj\Debug\net9.0\refint\AIS
 C:\Users\Matei\Desktop\AI Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.pdb
 C:\Users\Matei\Desktop\AI Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.genruntimeconfig.cache
 C:\Users\Matei\Desktop\AI Summarizer\AISummarizerAPI\obj\Debug\net9.0\ref\AISummarizerAPI.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\appsettings.Development.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\appsettings.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummarizerAPI.staticwebassets.endpoints.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummarizerAPI.exe
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummarizerAPI.deps.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummarizerAPI.runtimeconfig.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummarizerAPI.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummarizerAPI.pdb
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AngleSharp.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\HtmlAgilityPack.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.AspNetCore.OpenApi.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.DependencyInjection.Abstractions.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.Options.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.Options.DataAnnotations.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.Primitives.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.OpenApi.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\SmartReader.dll
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.csproj.AssemblyReference.cache
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.GeneratedMSBuildEditorConfig.editorconfig
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.AssemblyInfoInputs.cache
@@ -57,19 +40,3 @@ C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummariz
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.MvcApplicationPartsAssemblyInfo.cs
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.MvcApplicationPartsAssemblyInfo.cache
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.sourcelink.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\scopedcss\bundle\AISummarizerAPI.styles.css
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets.build.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets.development.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets.build.endpoints.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets\msbuild.AISummarizerAPI.Microsoft.AspNetCore.StaticWebAssets.props
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets\msbuild.AISummarizerAPI.Microsoft.AspNetCore.StaticWebAssetEndpoints.props
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets\msbuild.build.AISummarizerAPI.props
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets\msbuild.buildMultiTargeting.AISummarizerAPI.props
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets\msbuild.buildTransitive.AISummarizerAPI.props
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\staticwebassets.pack.json
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummar.BFD2E125.Up2Date
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\refint\AISummarizerAPI.dll
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.pdb
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.genruntimeconfig.cache
-C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\ref\AISummarizerAPI.dll
