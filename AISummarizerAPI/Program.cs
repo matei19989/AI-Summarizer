@@ -90,6 +90,9 @@ builder.Services.AddScoped<ISummarizationService, SummarizationService>();
 // ===================================================================
 
 // Enhanced CORS configuration for both development and production
+
+// Updated Program.cs CORS configuration for Docker environment
+main
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactPolicy", corsBuilder =>

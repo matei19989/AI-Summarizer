@@ -36,8 +36,6 @@ on:
 # Environment variables used across all jobs
 env:
   REGISTRY: ghcr.io
-  # Using GitHub repository owner and name for consistent naming
-  IMAGE_NAME: ${{ github.repository }}
 
 # Default permissions for security (principle of least privilege)
 permissions:
@@ -49,6 +47,8 @@ jobs:
   # Job 1: Build and test backend Docker image
   build-backend:
     runs-on: ubuntu-latest
+    outputs:
+      image-name: ${{ steps.image.outputs.image-name }}
     
     steps:
       - name: Checkout repository
@@ -72,13 +72,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      # Convert repository name to lowercase for Docker compatibility
+      - name: Generate image name
+        id: image
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated image name: ${IMAGE_NAME}"
+      
       # Extract metadata for Docker tags and labels
       # Fixed tagging to avoid invalid tag formats
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/backend
           tags: |
             # Tag with branch name for branches
             type=ref,event=branch
@@ -112,6 +120,8 @@ jobs:
   # Job 2: Build and test frontend Docker image
   build-frontend:
     runs-on: ubuntu-latest
+    outputs:
+      image-name: ${{ steps.image.outputs.image-name }}
     
     steps:
       - name: Checkout repository
@@ -128,11 +138,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      # Convert repository name to lowercase for Docker compatibility
+      - name: Generate image name
+        id: image
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated image name: ${IMAGE_NAME}"
+      
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/frontend
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -208,10 +226,17 @@ jobs:
         image: [backend, frontend]
     
     steps:
+      - name: Generate image name
+        id: image
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "Scanning image: ${{ env.REGISTRY }}/${IMAGE_NAME}/${{ matrix.image }}:latest"
+      
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:latest
+          image-ref: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/${{ matrix.image }}:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
       
