@@ -43,6 +43,10 @@ C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AISummariz
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\AngleSharp.dll
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\HtmlAgilityPack.dll
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.AspNetCore.OpenApi.dll
+C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.DependencyInjection.Abstractions.dll
+C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.Options.dll
+C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.Options.DataAnnotations.dll
+C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.Extensions.Primitives.dll
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\Microsoft.OpenApi.dll
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\bin\Debug\net9.0\SmartReader.dll
 C:\Users\Matei\Desktop\AI-Summarizer\AISummarizerAPI\obj\Debug\net9.0\AISummarizerAPI.csproj.AssemblyReference.cache

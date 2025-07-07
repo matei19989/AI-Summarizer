@@ -18,6 +18,10 @@ services:
       - ASPNETCORE_URLS=http://+:5088
       - ASPNETCORE_DETAILEDERRORS=true
       - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Information
+      # Hugging Face API token from environment variable
+      - HuggingFace__ApiToken=${HuggingFace__ApiToken}
+      # Hugging Face API token from environment variable
+      - HuggingFace__ApiToken=${HuggingFace__ApiToken}
     volumes:
       - ./logs:/app/logs
     networks:

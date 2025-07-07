@@ -1,49 +1,54 @@
+// AISummarizerAPI/Services/Implementations/SummarizationService.cs
 using AISummarizerAPI.Models.DTOs;
 using AISummarizerAPI.Services.Interfaces;
 using AISummarizerAPI.Utils;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace AISummarizerAPI.Services.Implementations;
 
 /// <summary>
-/// Implementation of summarization service
-/// This follows the Single Responsibility Principle - handles only summarization logic
-/// Future integration with Hugging Face API will happen here without affecting other layers
-/// Now enhanced with actual URL content extraction for Day 5
+/// Enhanced implementation of summarization service with real AI integration
+/// This service now orchestrates between URL extraction and Hugging Face AI summarization
+/// Maintains the same interface but now provides genuine AI-powered summaries
+/// Follows Single Responsibility Principle - coordinates between services without handling HTTP details
 /// </summary>
 public class SummarizationService : ISummarizationService
 {
     private readonly ILogger<SummarizationService> _logger;
     private readonly HttpClient _httpClient;
     private readonly IUrlContentExtractor _urlContentExtractor;
+    private readonly IHuggingFaceApiClient _huggingFaceClient;
 
     /// <summary>
-    /// Constructor demonstrates Dependency Injection principle
-    /// Dependencies are injected rather than created internally
-    /// Now includes URL content extraction service for Day 5 functionality
+    /// Enhanced constructor now includes the Hugging Face API client
+    /// Demonstrates Dependency Injection principle with multiple services
+    /// Each service has a specific responsibility in the summarization pipeline
     /// </summary>
     public SummarizationService(
-        ILogger<SummarizationService> logger, 
+        ILogger<SummarizationService> logger,
         HttpClient httpClient,
-        IUrlContentExtractor urlContentExtractor)
+        IUrlContentExtractor urlContentExtractor,
+        IHuggingFaceApiClient huggingFaceClient)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _urlContentExtractor = urlContentExtractor ?? throw new ArgumentNullException(nameof(urlContentExtractor));
+        _huggingFaceClient = huggingFaceClient ?? throw new ArgumentNullException(nameof(huggingFaceClient));
     }
 
     /// <summary>
-    /// Summarizes plain text content
-    /// Currently returns a mock response - will be replaced with Hugging Face integration
-    /// Day 4 functionality - already complete and working
+    /// Enhanced text summarization using real Hugging Face AI
+    /// Now provides genuine AI-powered summaries instead of mock responses
+    /// Maintains the same interface contract for seamless frontend integration
     /// </summary>
     public async Task<SummarizationResponse> SummarizeTextAsync(string content, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting text summarization for content length: {ContentLength}", content.Length);
+        _logger.LogInformation("Starting AI-powered text summarization for content length: {ContentLength}", content.Length);
 
         try
         {
-            // Validate input
+            // Validate input using existing validation logic
             var (isValid, errorMessage) = ValidateContent(content, "text");
             if (!isValid)
             {
@@ -56,18 +61,35 @@ public class SummarizationService : ISummarizationService
                 };
             }
 
-            // Simulate processing time for realistic user experience
-            await Task.Delay(1500, cancellationToken);
+            // Pre-process content for optimal AI summarization
+            var processedContent = PreprocessTextForSummarization(content);
+            _logger.LogDebug("Preprocessed content length: {Length}", processedContent.Length);
 
-            // TODO: Replace with actual Hugging Face API call (planned for future days)
-            var mockSummary = GenerateMockSummary(content, "text");
+            // Call Hugging Face API for real AI summarization
+            _logger.LogInformation("Calling Hugging Face API for text summarization");
+            var huggingFaceResponse = await _huggingFaceClient.SummarizeTextAsync(processedContent, cancellationToken);
 
-            _logger.LogInformation("Text summarization completed successfully");
+            if (!huggingFaceResponse.Success)
+            {
+                _logger.LogError("Hugging Face API call failed: {ErrorMessage}", huggingFaceResponse.ErrorMessage);
+                return new SummarizationResponse
+                {
+                    Success = false,
+                    ErrorMessage = GetUserFriendlyErrorMessage(huggingFaceResponse.ErrorMessage, "text"),
+                    ProcessedContentType = "text"
+                };
+            }
+
+            // Post-process the AI-generated summary for better presentation
+            var finalSummary = PostprocessSummary(huggingFaceResponse.SummaryText);
+            
+            _logger.LogInformation("Successfully generated AI summary of length: {SummaryLength} from content length: {ContentLength}", 
+                finalSummary.Length, content.Length);
 
             return new SummarizationResponse
             {
-                Summary = mockSummary,
-                HasAudio = true, // Will be determined by TTS availability later
+                Summary = finalSummary,
+                HasAudio = true, // TTS will be implemented in next phase
                 Success = true,
                 ProcessedContentType = "text",
                 GeneratedAt = DateTime.UtcNow
@@ -80,28 +102,28 @@ public class SummarizationService : ISummarizationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred during text summarization");
+            _logger.LogError(ex, "Unexpected error during AI text summarization");
             return new SummarizationResponse
             {
                 Success = false,
-                ErrorMessage = "An unexpected error occurred while processing your text.",
+                ErrorMessage = "An unexpected error occurred while generating your summary. Please try again.",
                 ProcessedContentType = "text"
             };
         }
     }
 
     /// <summary>
-    /// Summarizes content from a URL
-    /// Day 5 implementation - now uses actual URL content extraction
-    /// Demonstrates separation of concerns - URL extraction vs summarization
+    /// Enhanced URL summarization combining content extraction with AI summarization
+    /// Demonstrates service orchestration - coordinates between URL extraction and AI processing
+    /// Now provides real AI summaries of extracted web content
     /// </summary>
     public async Task<SummarizationResponse> SummarizeUrlAsync(string url, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting URL summarization for: {Url}", LogSanitizer.SanitizeAndTruncate(url, 200));
+        _logger.LogInformation("Starting AI-powered URL summarization for: {Url}", LogSanitizer.SanitizeAndTruncate(url, 200));
 
         try
         {
-            // Validate input
+            // Validate input using existing validation logic
             var (isValid, errorMessage) = ValidateContent(url, "url");
             if (!isValid)
             {
@@ -114,7 +136,7 @@ public class SummarizationService : ISummarizationService
                 };
             }
 
-            // Day 5 Implementation: Extract actual content from URL using Mozilla Readability
+            // Step 1: Extract content from URL (existing functionality)
             _logger.LogInformation("Extracting content from URL...");
             var extractionResult = await _urlContentExtractor.ExtractContentAsync(url, cancellationToken);
 
@@ -129,24 +151,49 @@ public class SummarizationService : ISummarizationService
                 };
             }
 
-            _logger.LogInformation("Successfully extracted {ContentLength} characters from URL. Title: {Title}", 
-                extractionResult.Content.Length, 
-                LogSanitizer.SanitizeAndTruncate(extractionResult.Title, 100));
+            _logger.LogInformation("Successfully extracted {ContentLength} characters from URL", extractionResult.Content.Length);
 
-            // Now process the extracted content as text (reuse text processing logic)
-            // Simulate processing time for realistic user experience
-            await Task.Delay(1500, cancellationToken);
+            // Step 2: Pre-process extracted content for AI summarization
+            var processedContent = PreprocessTextForSummarization(extractionResult.Content);
+            
+            // Validate that extracted content is suitable for summarization
+            if (processedContent.Length < 50)
+            {
+                return new SummarizationResponse
+                {
+                    Success = false,
+                    ErrorMessage = "The extracted content is too short for meaningful summarization.",
+                    ProcessedContentType = "url"
+                };
+            }
 
-            // TODO: Replace with actual Hugging Face API call (planned for future days)
-            // For now, generate mock summary based on extracted content
-            var mockSummary = GenerateMockSummaryFromExtraction(extractionResult);
+            // Step 3: Generate AI summary using Hugging Face
+            _logger.LogInformation("Generating AI summary for extracted URL content");
+            var huggingFaceResponse = await _huggingFaceClient.SummarizeTextAsync(processedContent, cancellationToken);
 
-            _logger.LogInformation("URL summarization completed successfully");
+            if (!huggingFaceResponse.Success)
+            {
+                _logger.LogError("Hugging Face API call failed for URL content: {ErrorMessage}", huggingFaceResponse.ErrorMessage);
+                return new SummarizationResponse
+                {
+                    Success = false,
+                    ErrorMessage = GetUserFriendlyErrorMessage(huggingFaceResponse.ErrorMessage, "url"),
+                    ProcessedContentType = "url"
+                };
+            }
+
+            // Step 4: Create enhanced summary with metadata
+            var enhancedSummary = CreateEnhancedUrlSummary(
+                huggingFaceResponse.SummaryText, 
+                extractionResult,
+                huggingFaceResponse.ProcessingTime);
+
+            _logger.LogInformation("Successfully generated AI summary for URL content");
 
             return new SummarizationResponse
             {
-                Summary = mockSummary,
-                HasAudio = true,
+                Summary = enhancedSummary,
+                HasAudio = true, // TTS will be implemented in next phase
                 Success = true,
                 ProcessedContentType = "url",
                 GeneratedAt = DateTime.UtcNow
@@ -159,20 +206,19 @@ public class SummarizationService : ISummarizationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred during URL summarization");
+            _logger.LogError(ex, "Unexpected error during AI URL summarization");
             return new SummarizationResponse
             {
                 Success = false,
-                ErrorMessage = "An unexpected error occurred while processing the URL.",
+                ErrorMessage = "An unexpected error occurred while processing the URL. Please try again.",
                 ProcessedContentType = "url"
             };
         }
     }
 
     /// <summary>
-    /// Validates content based on type
-    /// Follows Single Responsibility - isolated validation logic
-    /// Unchanged from original implementation - already working well
+    /// Existing validation logic - unchanged to maintain compatibility
+    /// Validates content based on type with appropriate rules for each input method
     /// </summary>
     public (bool IsValid, string ErrorMessage) ValidateContent(string content, string contentType)
     {
@@ -186,11 +232,11 @@ public class SummarizationService : ISummarizationService
             case "text":
                 if (content.Length < 50)
                 {
-                    return (false, "Text content must be at least 50 characters for meaningful summarization");
+                    return (false, "Text content must be at least 50 characters for meaningful AI summarization");
                 }
                 if (content.Length > 10000)
                 {
-                    return (false, "Text content exceeds maximum length of 10,000 characters");
+                    return (false, "Text content exceeds maximum length of 10,000 characters. Please shorten your text.");
                 }
                 break;
 
@@ -210,55 +256,152 @@ public class SummarizationService : ISummarizationService
     }
 
     /// <summary>
-    /// Generates mock summary for development purposes
-    /// Will be removed when real AI integration is implemented
-    /// Unchanged from original - still needed for Day 4/5 pipeline validation
+    /// Preprocesses text content to optimize it for AI summarization
+    /// Cleans up common formatting issues and ensures optimal input for the AI model
     /// </summary>
-    private static string GenerateMockSummary(string content, string contentType)
+    private static string PreprocessTextForSummarization(string content)
     {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        var contentLength = contentType == "url" ? "URL content" : $"{content.Length} characters";
+        if (string.IsNullOrWhiteSpace(content))
+            return string.Empty;
 
-        return $"[Generated at {timestamp}] This is an AI-generated summary of your {contentType} content ({contentLength}). " +
-               "The summary demonstrates the successful communication between your React frontend and C# backend API. " +
-               "In the next development phase, this will be replaced with actual AI-powered summarization using the " +
-               "Hugging Face facebook/bart-large-cnn model, providing intelligent, concise summaries of your content.";
+        // Remove excessive whitespace and normalize line breaks
+        var processed = Regex.Replace(content, @"\s+", " ").Trim();
+        
+        // Remove common patterns that don't add value to summaries
+        processed = Regex.Replace(processed, @"\b(Click here|Read more|Subscribe|Advertisement)\b", "", RegexOptions.IgnoreCase);
+        
+        // Ensure content doesn't exceed optimal length for the model
+        // BART works best with content under 1024 tokens (roughly 4000 characters)
+        if (processed.Length > 4000)
+        {
+            // Intelligently truncate by taking the first portion
+            // This preserves the most important content which is typically at the beginning
+            processed = processed.Substring(0, 4000);
+            
+            // Try to end at a sentence boundary for better results
+            var lastPeriod = processed.LastIndexOf('.');
+            if (lastPeriod > 3000) // Only use sentence boundary if it's reasonably long
+            {
+                processed = processed.Substring(0, lastPeriod + 1);
+            }
+        }
+
+        return processed;
     }
 
     /// <summary>
-    /// Generates mock summary specifically for extracted URL content
-    /// Day 5 enhancement - shows that URL extraction is working
-    /// Includes extracted metadata to demonstrate successful content extraction
+    /// Post-processes AI-generated summaries to improve readability and presentation
+    /// Ensures consistent formatting and quality for the user interface
     /// </summary>
-    private static string GenerateMockSummaryFromExtraction(UrlExtractionResult extractionResult)
+    private static string PostprocessSummary(string summary)
     {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        if (string.IsNullOrWhiteSpace(summary))
+            return "Unable to generate summary.";
+
+        // Clean up the summary text
+        var processed = summary.Trim();
         
-        var summary = $"[Generated at {timestamp}] Successfully extracted and summarized content from: {extractionResult.SourceUrl}\n\n";
+        // Ensure proper capitalization at the start
+        if (processed.Length > 0 && char.IsLower(processed[0]))
+        {
+            processed = char.ToUpper(processed[0]) + processed.Substring(1);
+        }
         
+        // Ensure summary ends with proper punctuation
+        if (!processed.EndsWith('.') && !processed.EndsWith('!') && !processed.EndsWith('?'))
+        {
+            processed += ".";
+        }
+        
+        // Remove any artifacts from the AI model
+        processed = processed.Replace("Summary:", "").Trim();
+        
+        return processed;
+    }
+
+    /// <summary>
+    /// Creates an enhanced summary for URL content that includes metadata
+    /// Provides context about the source and extraction process for better user experience
+    /// </summary>
+    private static string CreateEnhancedUrlSummary(
+        string aiSummary, 
+        UrlExtractionResult extractionResult, 
+        TimeSpan processingTime)
+    {
+        var enhancedSummary = new StringBuilder();
+        
+        // Add source information for transparency
         if (!string.IsNullOrWhiteSpace(extractionResult.Title))
         {
-            summary += $"Article Title: {extractionResult.Title}\n";
+            enhancedSummary.AppendLine($"📰 {extractionResult.Title}");
+            enhancedSummary.AppendLine();
         }
         
         if (!string.IsNullOrWhiteSpace(extractionResult.Author))
         {
-            summary += $"Author: {extractionResult.Author}\n";
+            enhancedSummary.AppendLine($"✍️ By {extractionResult.Author}");
+            enhancedSummary.AppendLine();
         }
         
-        summary += $"\nContent Length: {extractionResult.Content.Length} characters\n";
-        summary += $"Extraction Time: {extractionResult.ExtractedAt:yyyy-MM-dd HH:mm:ss} UTC\n\n";
+        // Add the AI-generated summary (the main content)
+        enhancedSummary.AppendLine("🤖 AI Summary:");
+        enhancedSummary.AppendLine(PostprocessSummary(aiSummary));
+        enhancedSummary.AppendLine();
         
-        summary += "This demonstrates successful URL content extraction using Mozilla Readability algorithm. ";
-        summary += "The extracted content is now ready for AI-powered summarization, which will be implemented in the next development phase using ";
-        summary += "the Hugging Face facebook/bart-large-cnn model.\n\n";
+        // Add metadata footer for transparency
+        enhancedSummary.AppendLine($"📊 Source: {extractionResult.Content.Length:N0} characters analyzed");
+        enhancedSummary.AppendLine($"⏱️ Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
         
-        // Include a snippet of the actual extracted content to show it's working
-        var contentPreview = extractionResult.Content.Length > 200 
-            ? extractionResult.Content.Substring(0, 200) + "..." 
-            : extractionResult.Content;
-        summary += $"Content Preview: {contentPreview}";
+        if (processingTime > TimeSpan.Zero)
+        {
+            enhancedSummary.AppendLine($"⚡ Processing time: {processingTime.TotalSeconds:F1}s");
+        }
+        
+        return enhancedSummary.ToString();
+    }
 
-        return summary;
+    /// <summary>
+    /// Converts technical error messages into user-friendly explanations
+    /// Provides helpful guidance based on the type of content being processed
+    /// </summary>
+    private static string GetUserFriendlyErrorMessage(string? technicalError, string contentType)
+    {
+        if (string.IsNullOrEmpty(technicalError))
+        {
+            return contentType == "url" 
+                ? "Unable to generate summary from the webpage content." 
+                : "Unable to generate summary from the provided text.";
+        }
+
+        // Convert common technical errors to user-friendly messages
+        if (technicalError.Contains("loading", StringComparison.OrdinalIgnoreCase) ||
+            technicalError.Contains("warming up", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The AI summarization service is starting up. Please try again in a moment.";
+        }
+
+        if (technicalError.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
+            technicalError.Contains("too many", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The service is currently busy. Please wait a moment and try again.";
+        }
+
+        if (technicalError.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            return contentType == "url"
+                ? "The webpage took too long to process. Please try a different URL or try again later."
+                : "The text took too long to process. Please try with shorter content.";
+        }
+
+        if (technicalError.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+            technicalError.Contains("token", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The summarization service is temporarily unavailable. Please try again later.";
+        }
+
+        // Default user-friendly message
+        return contentType == "url"
+            ? "Unable to generate summary from this webpage. Please try a different URL."
+            : "Unable to generate summary from this text. Please try different content.";
     }
 }
