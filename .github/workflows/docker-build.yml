@@ -112,8 +112,8 @@ jobs:
           
           # Run container in background
           docker run -d --name test-container -p 8080:80 \
-            -e HuggingFace__ApiToken=${{ secrets.HUGGINGFACE_API_TOKEN }} \
-            ${{ needs.build-and-push-backend.outputs.image-tag }}
+            -e HuggingFace__ApiToken="dummy-token" \
+            ghcr.io/matei1998/aisummarizer-backend:latest
           
           # Wait for container to start
           sleep 30
