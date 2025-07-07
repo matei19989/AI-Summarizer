@@ -5,6 +5,7 @@ using AISummarizerAPI.Models.DTOs;
 using AISummarizerAPI.Application.Interfaces;
 using AISummarizerAPI.Core.Interfaces;
 using AISummarizerAPI.Core.Models;
+using AISummarizerAPI.Utils;
 
 /// <summary>
 /// Updated controller that demonstrates the power of clean architecture
@@ -49,8 +50,9 @@ public class SummarizationController : ControllerBase
         [FromBody] SummarizationRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Received summarization request for content type: {ContentType}", 
-            request?.ContentType);
+        // SECURITY: Sanitize content type before logging to prevent log injection attacks
+        var sanitizedContentType = LogSanitizer.SanitizeContentType(request?.ContentType);
+        _logger.LogInformation("Received summarization request for content type: {ContentType}", sanitizedContentType);
 
         try
         {

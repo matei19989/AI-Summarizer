@@ -4,6 +4,7 @@ using AISummarizerAPI.Core.Interfaces;
 using AISummarizerAPI.Core.Models;
 using AISummarizerAPI.Application.Interfaces;
 using AISummarizerAPI.Application.Models;
+using AISummarizerAPI.Utils;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -110,7 +111,10 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
                 return TextContentResult.CreateSuccess(request.Content);
 
             case ContentType.Url:
-                _logger.LogInformation("Extracting content from URL: {Url}", request.Content);
+                // SECURITY: Sanitize URL before logging to prevent log injection attacks
+                var sanitizedUrl = LogSanitizer.SanitizeUrl(request.Content);
+                _logger.LogInformation("Extracting content from URL: {Url}", sanitizedUrl);
+                
                 var extractedContent = await _extractor.ExtractAsync(request.Content, cancellationToken);
                 
                 if (!extractedContent.Success)

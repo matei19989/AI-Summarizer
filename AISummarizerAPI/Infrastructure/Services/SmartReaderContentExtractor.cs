@@ -2,6 +2,7 @@ namespace AISummarizerAPI.Infrastructure.Services;
 
 using AISummarizerAPI.Core.Interfaces;
 using AISummarizerAPI.Core.Models;
+using AISummarizerAPI.Utils;
 using SmartReader;
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
@@ -21,7 +22,9 @@ public class SmartReaderContentExtractor : IContentExtractor
 
     public async Task<ExtractedContent> ExtractAsync(string url, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Extracting content from URL: {Url}", SanitizeUrlForLogging(url));
+        // SECURITY: Sanitize URL before logging to prevent log injection attacks
+        var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
+        _logger.LogInformation("Extracting content from URL: {Url}", sanitizedUrl);
 
         try
         {
@@ -44,7 +47,7 @@ public class SmartReaderContentExtractor : IContentExtractor
 
             if (article == null || string.IsNullOrWhiteSpace(article.Content))
             {
-                _logger.LogWarning("No readable content found at URL: {Url}", SanitizeUrlForLogging(url));
+                _logger.LogWarning("No readable content found at URL: {Url}", sanitizedUrl);
                 return ExtractedContent.CreateFailure(
                     "Could not extract readable content from this URL. The page may not contain article content or may be behind a paywall.",
                     url);
@@ -81,7 +84,7 @@ public class SmartReaderContentExtractor : IContentExtractor
         }
         catch (TimeoutException)
         {
-            _logger.LogWarning("Content extraction timed out for URL: {Url}", SanitizeUrlForLogging(url));
+            _logger.LogWarning("Content extraction timed out for URL: {Url}", sanitizedUrl);
             return ExtractedContent.CreateFailure(
                 "The page took too long to load. Please try a different URL.",
                 url);
@@ -106,7 +109,9 @@ public class SmartReaderContentExtractor : IContentExtractor
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "URL accessibility check failed for: {Url}", SanitizeUrlForLogging(url));
+            // SECURITY: Sanitize URL before logging to prevent log injection attacks
+            var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
+            _logger.LogDebug(ex, "URL accessibility check failed for: {Url}", sanitizedUrl);
             return false;
         }
     }
@@ -121,14 +126,5 @@ public class SmartReaderContentExtractor : IContentExtractor
         cleanText = Regex.Replace(cleanText, @"\s+", " ");
         
         return cleanText.Trim();
-    }
-
-    private static string SanitizeUrlForLogging(string url)
-    {
-        if (string.IsNullOrEmpty(url))
-            return "null";
-            
-        var sanitized = url.Replace("\r", "").Replace("\n", "").Trim();
-        return sanitized.Length > 200 ? sanitized.Substring(0, 200) + "..." : sanitized;
     }
 }

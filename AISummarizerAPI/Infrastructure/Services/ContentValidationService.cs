@@ -2,6 +2,7 @@ namespace AISummarizerAPI.Infrastructure.Services;
 
 using AISummarizerAPI.Core.Interfaces;
 using AISummarizerAPI.Core.Models;
+using AISummarizerAPI.Utils;
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
 using System.Linq;
@@ -107,7 +108,9 @@ public class ContentValidationService : IContentValidator
                 _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AISummarizer/1.0)");
             }
 
-            _logger.LogDebug("Checking URL accessibility: {Url}", url);
+            // SECURITY: Sanitize URL before logging to prevent log injection attacks
+            var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
+            _logger.LogDebug("Checking URL accessibility: {Url}", sanitizedUrl);
 
             using var response = await _httpClient.SendAsync(
                 new HttpRequestMessage(HttpMethod.Head, url), 
@@ -116,7 +119,7 @@ public class ContentValidationService : IContentValidator
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("URL accessibility check failed: {StatusCode} for {Url}", 
-                    response.StatusCode, url);
+                    response.StatusCode, sanitizedUrl);
                 
                 return ValidationResult.Failure(
                     $"The URL is not accessible (HTTP {(int)response.StatusCode}). " +
@@ -124,7 +127,7 @@ public class ContentValidationService : IContentValidator
                     ValidationErrorType.NetworkAccessibility);
             }
 
-            _logger.LogDebug("URL accessibility confirmed for: {Url}", url);
+            _logger.LogDebug("URL accessibility confirmed for: {Url}", sanitizedUrl);
             return ValidationResult.Success();
         }
         catch (TaskCanceledException)
@@ -135,14 +138,20 @@ public class ContentValidationService : IContentValidator
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "HTTP error during URL accessibility check for: {Url}", url);
+            // SECURITY: Sanitize URL before logging
+            var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
+            _logger.LogWarning(ex, "HTTP error during URL accessibility check for: {Url}", sanitizedUrl);
+            
             return ValidationResult.Failure(
                 "Could not connect to the URL. Please verify the URL is correct and accessible.",
                 ValidationErrorType.NetworkAccessibility);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error during URL validation for: {Url}", url);
+            // SECURITY: Sanitize URL before logging
+            var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
+            _logger.LogError(ex, "Unexpected error during URL validation for: {Url}", sanitizedUrl);
+            
             return ValidationResult.Failure(
                 "Could not validate the URL. Please try again.",
                 ValidationErrorType.NetworkAccessibility);
