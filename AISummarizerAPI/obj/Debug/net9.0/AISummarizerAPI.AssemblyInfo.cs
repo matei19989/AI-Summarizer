@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AISummarizerAPI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0895a4b4ec72cb40d679476879a88a04fac2dfea")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8ce89b6bba9911c9403c7e8a58688d2997510a3c")]
 [assembly: System.Reflection.AssemblyProductAttribute("AISummarizerAPI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AISummarizerAPI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
