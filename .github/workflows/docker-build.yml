@@ -216,11 +216,19 @@ jobs:
           
           echo "API Response: $response"
           
-          # Check if response contains a summary
-          echo "$response" | grep -q "summary" || exit 1
+          # Check if response contains a summary field
+          echo "$response" | grep -q '"summary"' || exit 1
           
-          # Additional check to ensure it's not an error response
-          echo "$response" | grep -qv "error\|Error\|ERROR" || exit 1
+          # Check that success is true
+          echo "$response" | grep -q '"success":true' || exit 1
+          
+          # Ensure we don't have an actual error (not just the errorMessage field)
+          if echo "$response" | grep -q '"success":false'; then
+            echo "❌ API returned success:false"
+            exit 1
+          fi
+          
+          echo "✅ API test successful - real AI summarization is working!"
       
       # Clean up test environment
       - name: Clean up
