@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5088',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net',
   ENDPOINTS: {
     SUMMARIZE: '/api/summarization/summarize',
     HEALTH_CHECK: '/api/summarization/health',
