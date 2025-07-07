@@ -1,12 +1,16 @@
 {
   "version": 2,
-  "dgSpecHash": "kSpCoaXS2MY=",
+  "dgSpecHash": "05zJlcTevxI=",
   "success": true,
   "projectFilePath": "C:\\Users\\Matei\\Desktop\\AI-Summarizer\\AISummarizerAPI\\AISummarizerAPI.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Matei\\.nuget\\packages\\anglesharp\\1.1.2\\anglesharp.1.1.2.nupkg.sha512",
     "C:\\Users\\Matei\\.nuget\\packages\\htmlagilitypack\\1.12.1\\htmlagilitypack.1.12.1.nupkg.sha512",
     "C:\\Users\\Matei\\.nuget\\packages\\microsoft.aspnetcore.openapi\\9.0.6\\microsoft.aspnetcore.openapi.9.0.6.nupkg.sha512",
+    "C:\\Users\\Matei\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.6\\microsoft.extensions.dependencyinjection.abstractions.9.0.6.nupkg.sha512",
+    "C:\\Users\\Matei\\.nuget\\packages\\microsoft.extensions.options\\9.0.6\\microsoft.extensions.options.9.0.6.nupkg.sha512",
+    "C:\\Users\\Matei\\.nuget\\packages\\microsoft.extensions.options.dataannotations\\9.0.6\\microsoft.extensions.options.dataannotations.9.0.6.nupkg.sha512",
+    "C:\\Users\\Matei\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.6\\microsoft.extensions.primitives.9.0.6.nupkg.sha512",
     "C:\\Users\\Matei\\.nuget\\packages\\microsoft.openapi\\1.6.17\\microsoft.openapi.1.6.17.nupkg.sha512",
     "C:\\Users\\Matei\\.nuget\\packages\\smartreader\\0.10.0\\smartreader.0.10.0.nupkg.sha512",
     "C:\\Users\\Matei\\.nuget\\packages\\system.text.encoding.codepages\\8.0.0\\system.text.encoding.codepages.8.0.0.nupkg.sha512",
