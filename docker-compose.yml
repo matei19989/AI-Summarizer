@@ -1,125 +1,61 @@
 # ===================================================================
-# Production Docker Compose - AI Content Summarizer
-# Professional setup with proper networking and security
+# Development Docker Compose with nginx configuration selection
 # ===================================================================
 
 version: '3.8'
 
 services:
-  # Backend API Service
   backend:
     build:
       context: ./AISummarizerAPI
       dockerfile: Dockerfile
       target: runtime
-    container_name: ai-summarizer-api
-    # Internal port only - accessed via nginx proxy
-    expose:
-      - "5088"
+    container_name: ai-summarizer-api-dev
+    ports:
+      - "5088:5088"  # Expose for direct debugging
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5088
-      - ASPNETCORE_DETAILEDERRORS=false
-      - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Warning
-      - ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+      - ASPNETCORE_DETAILEDERRORS=true
+      - ASPNETCORE_LOGGING__LOGLEVEL__DEFAULT=Information
+      # Hugging Face API token from environment variable
+      - HuggingFace__ApiToken=${HuggingFace__ApiToken}
     volumes:
-      - app_logs:/app/logs
-      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - ./logs:/app/logs
     networks:
-      - app_network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-      restart_policy:
-        condition: unless-stopped
-        delay: 5s
-        max_attempts: 3
+      - ai-summarizer-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5088/api/summarization/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    # Security hardening - removed read_only due to logging needs
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-      - /var/tmp:noexec,nosuid,size=50m
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-    security_opt:
-      - no-new-privileges:true
+    restart: unless-stopped
 
-  # Frontend Service with Nginx Proxy
   frontend:
     build:
       context: ./ai-summarizer-frontend
       dockerfile: Dockerfile
       target: runtime
-    container_name: ai-summarizer-frontend
+    container_name: ai-summarizer-frontend-dev
     ports:
-      - "80:80"
-      - "443:443"  # For future SSL
+      - "3000:80"  # Map host port 3000 to container port 80
     environment:
-      - NGINX_ENV=production  # This selects nginx.prod.conf
+      - NGINX_ENV=development  # This selects nginx.dev.conf
     networks:
-      - app_network
+      - ai-summarizer-network
     depends_on:
       backend:
         condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
-      restart_policy:
-        condition: unless-stopped
-        delay: 5s
-        max_attempts: 3
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 15s
-    # Security hardening
-    read_only: true
-    tmpfs:
-      - /var/cache/nginx:noexec,nosuid,size=50m
-      - /var/run:noexec,nosuid,size=10m
-      - /tmp:noexec,nosuid,size=50m
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-      - CHOWN
-      - SETUID
-      - SETGID
-    security_opt:
-      - no-new-privileges:true
+      start_period: 10s
+    restart: unless-stopped
 
-# Named volumes for persistence
-volumes:
-  app_logs:
-    driver: local
-
-# Isolated network
 networks:
-  app_network:
+  ai-summarizer-network:
     driver: bridge
-    name: ai-summarizer
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.20.0.0/16
-    driver_opts:
-      com.docker.network.bridge.name: br-ai-sum
+    name: ai-summarizer-dev
