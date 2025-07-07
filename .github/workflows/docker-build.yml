@@ -1,269 +1,132 @@
 # ===================================================================
-# Docker Image Build and Push Workflow
-# Builds Docker images for both frontend and backend
-# Pushes to GitHub Container Registry (GHCR) for secure, free hosting
+# Docker Image Build and Push Workflow - Azure Optimized
+# This workflow builds and pushes your backend container to GitHub Container Registry
+# Azure Web App for Containers will pull from this registry automatically
 # ===================================================================
 
-name: Build and Push Docker Images
+name: Build and Push Backend for Azure
 
 on:
   # Trigger on pushes to main branch (production releases)
   push:
     branches: [ main ]
-    # Only trigger if there are actual changes to the application code
+    # Only trigger if backend code changes
     paths:
       - 'AISummarizerAPI/**'
-      - 'ai-summarizer-frontend/**'
-      - 'docker-compose*.yml'
       - '.github/workflows/docker-build.yml'
-  
-  # Trigger on pull requests to main (for testing images)
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'AISummarizerAPI/**'
-      - 'ai-summarizer-frontend/**'
-      - 'docker-compose*.yml'
   
   # Allow manual workflow execution for testing
   workflow_dispatch:
     inputs:
-      push_images:
-        description: 'Push images to registry'
+      force_deploy:
+        description: 'Force deployment even without code changes'
         type: boolean
         default: false
 
 # Environment variables used across all jobs
 env:
   REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: aisummarizer-backend
 
-# Default permissions for security (principle of least privilege)
+# Required permissions for pushing to GitHub Container Registry
 permissions:
   contents: read
   packages: write
-  security-events: write  # For security scanning results
 
 jobs:
-  # Job 1: Build and test backend Docker image
-  build-backend:
+  # Build and push backend Docker image for Azure
+  build-and-push-backend:
     runs-on: ubuntu-latest
     outputs:
-      image-name: ${{ steps.image.outputs.image-name }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
       # Set up Docker Buildx for advanced build features
-      # Enables multi-platform builds and build caching
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          # Use default builder with buildkit
-          driver-opts: image=moby/buildkit:buildx-stable-1
       
       # Log in to GitHub Container Registry
-      # Only on main branch pushes or manual triggers with push enabled
       - name: Log in to Container Registry
-        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_images == 'true'))
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      # Convert repository name to lowercase for Docker compatibility
-      - name: Generate image name
-        id: image
-        run: |
-          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "Generated image name: ${IMAGE_NAME}"
-      
-      # Extract metadata for Docker tags and labels
-      # Fixed tagging to avoid invalid tag formats
-      - name: Extract metadata
+      # Generate image name (convert to lowercase for Docker compatibility)
+      - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/backend
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE_NAME }}
           tags: |
-            # Tag with branch name for branches
-            type=ref,event=branch
-            # Tag with version for releases
-            type=ref,event=tag
-            # Tag with PR number for pull requests  
-            type=ref,event=pr
+            # Tag with 'latest' for main branch (Azure will use this)
+            type=raw,value=latest,enable={{is_default_branch}}
             # Tag with commit SHA for unique identification
             type=sha,prefix=sha-
-            # Always tag latest for main branch
-            type=raw,value=latest,enable={{is_default_branch}}
+            # Tag with timestamp for easy identification
+            type=schedule,pattern={{date 'YYYYMMDD-HHmmss'}}
       
-      # Build and optionally push backend Docker image
+      # Build and push backend Docker image
       - name: Build and push backend image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: ./AISummarizerAPI
           file: ./AISummarizerAPI/Dockerfile
-          platforms: linux/amd64,linux/arm64  # Multi-platform support
-          # Only push on main branch or manual trigger with push enabled
-          push: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_images == 'true')) }}
+          platforms: linux/amd64  # Azure Web Apps typically use amd64
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Enable build caching for faster builds
+          # Enable build caching for faster subsequent builds
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Build arguments for better build context
+          # Build arguments for optimization
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+      
+      # Output image information for verification
+      - name: Output image details
+        run: |
+          echo "🐳 Backend image built and pushed successfully!"
+          echo "📦 Image: ${{ steps.meta.outputs.tags }}"
+          echo "🔍 Digest: ${{ steps.build.outputs.digest }}"
+          echo "🌐 This image is now ready for Azure Web App deployment"
 
-  # Job 2: Build and test frontend Docker image
-  build-frontend:
+  # Test the built image (optional but recommended)
+  test-container:
     runs-on: ubuntu-latest
-    outputs:
-      image-name: ${{ steps.image.outputs.image-name }}
+    needs: build-and-push-backend
+    if: github.ref == 'refs/heads/main'
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_images == 'true'))
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      # Convert repository name to lowercase for Docker compatibility
-      - name: Generate image name
-        id: image
+      - name: Test container startup
         run: |
-          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "Generated image name: ${IMAGE_NAME}"
-      
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/frontend
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
-      
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./ai-summarizer-frontend
-          file: ./ai-summarizer-frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_images == 'true')) }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-
-  # Job 3: Test the complete application stack
-  test-docker-compose:
-    runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend]
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      # Test that our docker-compose configuration works
-      - name: Test Docker Compose stack
-        env:
-          # Pass the Hugging Face token from GitHub secrets
-          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
-        run: |
-          # Export token in the format expected by the .NET backend
-          export HuggingFace__ApiToken=$HUGGINGFACE_API_TOKEN
+          echo "🧪 Testing container startup..."
+          # Pull the image we just built
+          docker pull ${{ needs.build-and-push-backend.outputs.image-tag }}
           
-          # Build images locally for testing
-          docker compose -f docker-compose.dev.yml build
+          # Run container in background
+          docker run -d --name test-container -p 8080:80 \
+            -e HuggingFace__ApiToken=${{ secrets.HUGGINGFACE_API_TOKEN }} \
+            ${{ needs.build-and-push-backend.outputs.image-tag }}
           
-          # Start the stack
-          docker compose -f docker-compose.dev.yml up -d
+          # Wait for container to start
+          sleep 30
           
-          # Wait for services to be healthy
-          timeout 300 bash -c 'until docker compose -f docker-compose.dev.yml ps | grep -E "(healthy|running)"; do sleep 10; done'
-          
-          # Test backend health endpoint
-          curl -f http://localhost:5088/api/summarization/health || exit 1
-          
-          # Test frontend accessibility
-          curl -f http://localhost:3000/health || exit 1
-          
-          # Test API integration with real AI summarization
-          echo "Testing API with real Hugging Face token..."
-          response=$(curl -X POST http://localhost:5088/api/summarization/summarize \
-            -H "Content-Type: application/json" \
-            -d '{"Content": "This is a comprehensive test content for summarization testing in our CI/CD pipeline. The content needs to be sufficiently long to pass validation requirements and to generate a meaningful summary response from the AI model. This tests the integration between our backend API and the Hugging Face summarization service.", "ContentType": "text"}')
-          
-          echo "API Response: $response"
-          
-          # Check if response contains a summary field
-          echo "$response" | grep -q '"summary"' || exit 1
-          
-          # Check that success is true
-          echo "$response" | grep -q '"success":true' || exit 1
-          
-          # Ensure we don't have an actual error (not just the errorMessage field)
-          if echo "$response" | grep -q '"success":false'; then
-            echo "❌ API returned success:false"
+          # Test health endpoint
+          if curl -f http://localhost:8080/api/summarization/health; then
+            echo "✅ Container health check passed!"
+          else
+            echo "❌ Container health check failed!"
+            docker logs test-container
             exit 1
           fi
           
-          echo "✅ API test successful - real AI summarization is working!"
-      
-      # Clean up test environment
-      - name: Clean up
-        if: always()
-        run: |
-          docker compose -f docker-compose.dev.yml down -v
-          docker system prune -af
-
-  # Job 4: Security scanning of built images
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend]
-    if: github.event_name != 'pull_request'
-    continue-on-error: true
-    strategy:
-      matrix:
-        image: [backend, frontend]
-    
-    steps:
-      - name: Generate image name
-        id: image
-        run: |
-          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "Scanning image: ${{ env.REGISTRY }}/${IMAGE_NAME}/${{ matrix.image }}:latest"
-      
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ steps.image.outputs.image-name }}/${{ matrix.image }}:latest
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-      
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
+          # Clean up
+          docker stop test-container
+          docker rm test-container

@@ -58,9 +58,21 @@
               "target": "Package",
               "version": "[9.0.6, )"
             },
+            "Microsoft.Extensions.Http.Polly": {
+              "target": "Package",
+              "version": "[9.0.6, )"
+            },
             "Microsoft.Extensions.Options.DataAnnotations": {
               "target": "Package",
               "version": "[9.0.6, )"
+            },
+            "Polly": {
+              "target": "Package",
+              "version": "[8.6.1, )"
+            },
+            "Polly.Extensions.Http": {
+              "target": "Package",
+              "version": "[3.0.0, )"
             },
             "SmartReader": {
               "target": "Package",
