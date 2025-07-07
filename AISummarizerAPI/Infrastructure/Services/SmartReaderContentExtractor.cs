@@ -45,7 +45,7 @@ public class SmartReaderContentExtractor : IContentExtractor
             if (article == null || string.IsNullOrWhiteSpace(article.Content))
             {
                 _logger.LogWarning("No readable content found at URL: {Url}", SanitizeUrlForLogging(url));
-                return ExtractedContent.Failure(
+                return ExtractedContent.CreateFailure(
                     "Could not extract readable content from this URL. The page may not contain article content or may be behind a paywall.",
                     url);
             }
@@ -54,14 +54,14 @@ public class SmartReaderContentExtractor : IContentExtractor
             
             if (cleanContent.Length < 50)
             {
-                return ExtractedContent.Failure(
+                return ExtractedContent.CreateFailure(
                     "Extracted content is too short for meaningful summarization (minimum 50 characters required).",
                     url);
             }
 
             _logger.LogInformation("Successfully extracted {ContentLength} characters from URL", cleanContent.Length);
 
-            return ExtractedContent.Success(
+            return ExtractedContent.CreateSuccess(
                 cleanContent,
                 article.Title ?? "Untitled Article",
                 article.Author ?? string.Empty,
@@ -75,21 +75,21 @@ public class SmartReaderContentExtractor : IContentExtractor
         catch (HttpRequestException httpEx)
         {
             _logger.LogError(httpEx, "HTTP error during URL content extraction");
-            return ExtractedContent.Failure(
+            return ExtractedContent.CreateFailure(
                 "Failed to access the URL. Please check that the URL is correct and accessible.",
                 url);
         }
         catch (TimeoutException)
         {
             _logger.LogWarning("Content extraction timed out for URL: {Url}", SanitizeUrlForLogging(url));
-            return ExtractedContent.Failure(
+            return ExtractedContent.CreateFailure(
                 "The page took too long to load. Please try a different URL.",
                 url);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during URL content extraction");
-            return ExtractedContent.Failure(
+            return ExtractedContent.CreateFailure(
                 "An unexpected error occurred while extracting content from the URL.",
                 url);
         }

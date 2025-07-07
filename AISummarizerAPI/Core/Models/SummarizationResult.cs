@@ -14,7 +14,7 @@ public class SummarizationResult
     public string SourceType { get; set; } = string.Empty;
     
     // Factory methods for common scenarios
-    public static SummarizationResult Success(string summary, string sourceType, TimeSpan processingTime)
+    public static SummarizationResult CreateSuccess(string summary, string sourceType, TimeSpan processingTime)
     {
         return new SummarizationResult
         {
@@ -25,7 +25,7 @@ public class SummarizationResult
         };
     }
     
-    public static SummarizationResult Failure(string errorMessage, string sourceType)
+    public static SummarizationResult CreateFailure(string errorMessage, string sourceType)
     {
         return new SummarizationResult
         {

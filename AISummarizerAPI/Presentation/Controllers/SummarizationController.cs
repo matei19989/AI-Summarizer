@@ -174,39 +174,44 @@ public class SummarizationController : ControllerBase
     {
         _logger.LogDebug("API information requested");
 
+        // Create arrays with explicit types to avoid compiler issues
+        var supportedContentTypes = new[]
+        {
+            new
+            {
+                Type = "text",
+                Description = "Plain text content to be summarized",
+                MinLength = 50,
+                MaxLength = 10000,
+                Example = "Your long article or document text here..."
+            },
+            new
+            {
+                Type = "url", 
+                Description = "URL to extract content from and summarize",
+                MinLength = 0,
+                MaxLength = 0,
+                Example = "https://example.com/article"
+            }
+        };
+
+        var features = new[]
+        {
+            "AI-powered summarization using state-of-the-art language models",
+            "Intelligent content extraction from web URLs",
+            "Comprehensive input validation and error handling",
+            "Real-time processing with cancellation support",
+            "Extensible architecture supporting multiple AI providers"
+        };
+
         var apiInfo = new
         {
             Name = "AI Content Summarizer API",
             Version = "2.0.0",
             Description = "Generates AI-powered summaries from text content or web URLs",
             
-            SupportedContentTypes = new[]
-            {
-                new
-                {
-                    Type = "text",
-                    Description = "Plain text content to be summarized",
-                    MinLength = 50,
-                    MaxLength = 10000,
-                    Example = "Your long article or document text here..."
-                },
-                new
-                {
-                    Type = "url", 
-                    Description = "URL to extract content from and summarize",
-                    Format = "Must start with http:// or https://",
-                    Example = "https://example.com/article"
-                }
-            },
-            
-            Features = new[]
-            {
-                "AI-powered summarization using state-of-the-art language models",
-                "Intelligent content extraction from web URLs",
-                "Comprehensive input validation and error handling",
-                "Real-time processing with cancellation support",
-                "Extensible architecture supporting multiple AI providers"
-            },
+            SupportedContentTypes = supportedContentTypes,
+            Features = features,
             
             Architecture = new
             {

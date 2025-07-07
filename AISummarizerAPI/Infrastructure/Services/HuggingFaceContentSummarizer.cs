@@ -30,7 +30,7 @@ public class HuggingFaceContentSummarizer : IContentSummarizer
             if (!huggingFaceResponse.Success)
             {
                 _logger.LogWarning("HuggingFace API call failed: {ErrorMessage}", huggingFaceResponse.ErrorMessage);
-                return SummarizationResult.Failure(
+                return SummarizationResult.CreateFailure(
                     ConvertToUserFriendlyMessage(huggingFaceResponse.ErrorMessage),
                     "AI Service");
             }
@@ -38,7 +38,7 @@ public class HuggingFaceContentSummarizer : IContentSummarizer
             var finalSummary = PostprocessAISummary(huggingFaceResponse.SummaryText);
             _logger.LogInformation("Successfully generated AI summary of length: {Length}", finalSummary.Length);
 
-            return SummarizationResult.Success(finalSummary, "AI Service", huggingFaceResponse.ProcessingTime);
+            return SummarizationResult.CreateSuccess(finalSummary, "AI Service", huggingFaceResponse.ProcessingTime);
         }
         catch (OperationCanceledException)
         {
@@ -48,7 +48,7 @@ public class HuggingFaceContentSummarizer : IContentSummarizer
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during AI summarization");
-            return SummarizationResult.Failure(
+            return SummarizationResult.CreateFailure(
                 "The AI summarization service encountered an error. Please try again.",
                 "AI Service");
         }

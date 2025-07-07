@@ -55,7 +55,7 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
             if (!validationResult.IsValid)
             {
                 _logger.LogWarning("Content validation failed: {ErrorMessage}", validationResult.ErrorMessage);
-                return SummarizationResult.Failure(validationResult.ErrorMessage, request.ContentType.ToString());
+                return SummarizationResult.CreateFailure(validationResult.ErrorMessage, request.ContentType.ToString());
             }
 
             // Step 2: Get the text content to summarize
@@ -86,7 +86,7 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during summarization orchestration");
-            return SummarizationResult.Failure(
+            return SummarizationResult.CreateFailure(
                 "An unexpected error occurred while processing your request. Please try again.", 
                 request.ContentType.ToString());
         }
@@ -107,7 +107,7 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
         {
             case ContentType.Text:
                 _logger.LogDebug("Using direct text content, length: {Length}", request.Content.Length);
-                return TextContentResult.Success(request.Content);
+                return TextContentResult.CreateSuccess(request.Content);
 
             case ContentType.Url:
                 _logger.LogInformation("Extracting content from URL: {Url}", request.Content);
@@ -115,14 +115,14 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
                 
                 if (!extractedContent.Success)
                 {
-                    return TextContentResult.Failure(extractedContent.ErrorMessage ?? "Failed to extract content from URL");
+                    return TextContentResult.CreateFailure(extractedContent.ErrorMessage ?? "Failed to extract content from URL");
                 }
                 
                 _logger.LogInformation("Successfully extracted {Length} characters from URL", extractedContent.Content.Length);
-                return TextContentResult.Success(extractedContent.Content);
+                return TextContentResult.CreateSuccess(extractedContent.Content);
 
             default:
-                return TextContentResult.Failure($"Unsupported content type: {request.ContentType}");
+                return TextContentResult.CreateFailure($"Unsupported content type: {request.ContentType}");
         }
     }
 

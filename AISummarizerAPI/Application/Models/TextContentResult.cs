@@ -14,7 +14,7 @@ internal class TextContentResult
     
     public bool IsFailure => !Success;
     
-    public static TextContentResult Success(string content)
+    public static TextContentResult CreateSuccess(string content)
     {
         return new TextContentResult
         {
@@ -23,7 +23,7 @@ internal class TextContentResult
         };
     }
     
-    public static TextContentResult Failure(string errorMessage)
+    public static TextContentResult CreateFailure(string errorMessage)
     {
         return new TextContentResult
         {
@@ -39,7 +39,7 @@ internal class TextContentResult
     public SummarizationResult ToSummarizationResult(string sourceType)
     {
         return Success 
-            ? SummarizationResult.Success(Content, sourceType, TimeSpan.Zero)
-            : SummarizationResult.Failure(ErrorMessage ?? "Unknown error", sourceType);
+            ? SummarizationResult.CreateSuccess(Content, sourceType, TimeSpan.Zero)
+            : SummarizationResult.CreateFailure(ErrorMessage ?? "Unknown error", sourceType);
     }
 }

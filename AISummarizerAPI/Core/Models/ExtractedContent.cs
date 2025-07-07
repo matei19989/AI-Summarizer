@@ -14,7 +14,7 @@ public class ExtractedContent
     public bool Success { get; set; }
     public string? ErrorMessage { get; set; }
     
-    public static ExtractedContent Success(string content, string title, string author, string sourceUrl)
+    public static ExtractedContent CreateSuccess(string content, string title, string author, string sourceUrl)
     {
         return new ExtractedContent
         {
@@ -26,7 +26,7 @@ public class ExtractedContent
         };
     }
     
-    public static ExtractedContent Failure(string errorMessage, string sourceUrl)
+    public static ExtractedContent CreateFailure(string errorMessage, string sourceUrl)
     {
         return new ExtractedContent
         {
