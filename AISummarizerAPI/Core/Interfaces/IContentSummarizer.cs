@@ -14,7 +14,7 @@ public interface IContentSummarizer
     /// Takes and returns domain models, hiding AI provider details
     /// </summary>
     Task<SummarizationResult> SummarizeAsync(string content, CancellationToken cancellationToken = default);
-    
+
     /// <summary>
     /// Checks if the summarization service is available
     /// Important for health checks and graceful degradation

@@ -66,7 +66,7 @@ builder.Services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((ser
 
     if (!string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
     {
-        client.DefaultRequestHeaders.Authorization = 
+        client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", huggingFaceOptions.ApiToken);
     }
 

@@ -12,7 +12,7 @@ public class SummarizationResult
     public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
     public TimeSpan ProcessingTime { get; set; }
     public string SourceType { get; set; } = string.Empty;
-    
+
     // Factory methods for common scenarios
     public static SummarizationResult CreateSuccess(string summary, string sourceType, TimeSpan processingTime)
     {
@@ -24,7 +24,7 @@ public class SummarizationResult
             ProcessingTime = processingTime
         };
     }
-    
+
     public static SummarizationResult CreateFailure(string errorMessage, string sourceType)
     {
         return new SummarizationResult

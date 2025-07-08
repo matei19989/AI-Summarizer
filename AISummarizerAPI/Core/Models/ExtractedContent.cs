@@ -13,7 +13,7 @@ public class ExtractedContent
     public DateTime ExtractedAt { get; set; } = DateTime.UtcNow;
     public bool Success { get; set; }
     public string? ErrorMessage { get; set; }
-    
+
     public static ExtractedContent CreateSuccess(string content, string title, string author, string sourceUrl)
     {
         return new ExtractedContent
@@ -25,7 +25,7 @@ public class ExtractedContent
             Success = true
         };
     }
-    
+
     public static ExtractedContent CreateFailure(string errorMessage, string sourceUrl)
     {
         return new ExtractedContent

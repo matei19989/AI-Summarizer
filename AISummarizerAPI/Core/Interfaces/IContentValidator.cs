@@ -14,7 +14,7 @@ public interface IContentValidator
     /// Returns validation result with specific error messages for better UX
     /// </summary>
     Task<ValidationResult> ValidateAsync(ContentRequest request, CancellationToken cancellationToken = default);
-    
+
     /// <summary>
     /// Quick synchronous validation for simple cases
     /// Useful for immediate feedback in the UI layer

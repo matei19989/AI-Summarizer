@@ -81,7 +81,7 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
             var request = CreateSummarizationRequest(text);
             var requestJson = JsonSerializer.Serialize(request, _jsonOptions);
 
-            _logger.LogDebug("Sending request to Hugging Face API: {RequestSize} bytes", 
+            _logger.LogDebug("Sending request to Hugging Face API: {RequestSize} bytes",
                 Encoding.UTF8.GetByteCount(requestJson));
 
             // Execute request with retry logic for resilience
@@ -179,7 +179,7 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
         // Add authentication header with API token
         if (!string.IsNullOrEmpty(_options.ApiToken))
         {
-            _httpClient.DefaultRequestHeaders.Authorization = 
+            _httpClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiToken);
         }
 
@@ -230,7 +230,7 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
         var processingTime = TimeSpan.Zero; // In a real implementation, you'd measure this
         var responseContent = await response.Content.ReadAsStringAsync();
 
-        _logger.LogDebug("Received response with status: {StatusCode}, content length: {ContentLength}", 
+        _logger.LogDebug("Received response with status: {StatusCode}, content length: {ContentLength}",
             response.StatusCode, responseContent.Length);
 
         if (response.IsSuccessStatusCode)
@@ -239,11 +239,11 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
             {
                 // Try to parse as successful response first
                 var rawResponses = JsonSerializer.Deserialize<HuggingFaceRawResponse[]>(responseContent, _jsonOptions);
-                
+
                 if (rawResponses != null && rawResponses.Length > 0 && !string.IsNullOrEmpty(rawResponses[0].SummaryText))
                 {
                     _logger.LogInformation("Successfully received summary of length: {Length}", rawResponses[0].SummaryText.Length);
-                    
+
                     return new HuggingFaceSummarizationResponse
                     {
                         SummaryText = rawResponses[0].SummaryText.Trim(),
@@ -325,12 +325,12 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
         {
             return "The AI model is warming up. Please try again in a few moments.";
         }
-        
+
         if (apiError.Contains("rate limit", StringComparison.OrdinalIgnoreCase) || statusCode == 429)
         {
             return "Too many requests. Please wait a moment before trying again.";
         }
-        
+
         if (apiError.Contains("token", StringComparison.OrdinalIgnoreCase) || statusCode == 401)
         {
             return "Authentication failed. Please check the API configuration.";
@@ -402,7 +402,7 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
     /// Helps handle temporary failures and model loading scenarios
     /// </summary>
     private async Task<HttpResponseMessage> ExecuteWithRetryAsync(
-        Func<Task<HttpResponseMessage>> httpCall, 
+        Func<Task<HttpResponseMessage>> httpCall,
         CancellationToken cancellationToken)
     {
         var maxAttempts = _options.RateLimit.MaxRetryAttempts;
@@ -413,14 +413,14 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
             try
             {
                 var response = await httpCall();
-                
+
                 // Return immediately on success or non-retryable errors
                 if (response.IsSuccessStatusCode || !IsRetryableStatusCode(response.StatusCode))
                 {
                     return response;
                 }
 
-                _logger.LogWarning("Attempt {Attempt}/{MaxAttempts} failed with status {StatusCode}", 
+                _logger.LogWarning("Attempt {Attempt}/{MaxAttempts} failed with status {StatusCode}",
                     attempt, maxAttempts, response.StatusCode);
 
                 // Don't retry on the last attempt
@@ -436,7 +436,7 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
             catch (HttpRequestException ex) when (attempt < maxAttempts)
             {
                 _logger.LogWarning(ex, "HTTP request failed on attempt {Attempt}/{MaxAttempts}", attempt, maxAttempts);
-                
+
                 var delay = TimeSpan.FromMilliseconds(baseDelay * Math.Pow(2, attempt - 1));
                 await Task.Delay(delay, cancellationToken);
             }
@@ -489,14 +489,14 @@ public class HuggingFaceApiClient : IHuggingFaceApiClient, IDisposable
             // Release the semaphore slot after a time window
             // Note: Using fire-and-forget pattern for cleanup - this is intentional
             _ = Task.Delay(TimeSpan.FromMinutes(1), cancellationToken)
-                .ContinueWith(_ => 
+                .ContinueWith(_ =>
                 {
-                    try 
-                    { 
-                        _rateLimitSemaphore.Release(); 
+                    try
+                    {
+                        _rateLimitSemaphore.Release();
                     }
-                    catch (ObjectDisposedException) 
-                    { 
+                    catch (ObjectDisposedException)
+                    {
                         // Semaphore was disposed, which is fine
                     }
                 }, TaskScheduler.Default);

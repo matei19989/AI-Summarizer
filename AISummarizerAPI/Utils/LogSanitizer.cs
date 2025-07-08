@@ -16,7 +16,7 @@ public static class LogSanitizer
     {
         if (string.IsNullOrEmpty(input))
             return "null";
-            
+
         return input
             .Replace("\r\n", " ")     // Replace Windows line endings
             .Replace("\r", " ")       // Replace carriage return
@@ -36,8 +36,8 @@ public static class LogSanitizer
     public static string SanitizeAndTruncate(string? input, int maxLength = 200)
     {
         var sanitized = Sanitize(input);
-        return sanitized.Length > maxLength 
-            ? sanitized.Substring(0, maxLength) + "..." 
+        return sanitized.Length > maxLength
+            ? sanitized.Substring(0, maxLength) + "..."
             : sanitized;
     }
 
@@ -52,7 +52,7 @@ public static class LogSanitizer
             return "null";
 
         var sanitized = Sanitize(url);
-        
+
         // Truncate very long URLs but preserve the domain for debugging
         if (sanitized.Length > 200)
         {
@@ -83,10 +83,10 @@ public static class LogSanitizer
             return "unknown";
 
         var sanitized = Sanitize(contentType);
-        
+
         // Content types should be short, but just in case
-        return sanitized.Length > 50 
-            ? sanitized.Substring(0, 50) + "..." 
+        return sanitized.Length > 50
+            ? sanitized.Substring(0, 50) + "..."
             : sanitized;
     }
 }

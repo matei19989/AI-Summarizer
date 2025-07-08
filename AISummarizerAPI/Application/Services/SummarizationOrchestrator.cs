@@ -45,7 +45,7 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
     public async Task<SummarizationResult> ProcessAsync(ContentRequest request, CancellationToken cancellationToken = default)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        
+
         _logger.LogInformation("Starting summarization process for content type: {ContentType}", request.ContentType);
 
         try
@@ -70,11 +70,11 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
             // Step 3: Generate the actual summary
             // The summarizer doesn't need to know where the text came from
             var summaryResult = await _summarizer.SummarizeAsync(textContent.Content, cancellationToken);
-            
+
             // Add processing time for monitoring and optimization
             summaryResult.ProcessingTime = stopwatch.Elapsed;
-            
-            _logger.LogInformation("Summarization completed successfully in {ProcessingTime}ms", 
+
+            _logger.LogInformation("Summarization completed successfully in {ProcessingTime}ms",
                 stopwatch.ElapsedMilliseconds);
 
             return summaryResult;
@@ -88,7 +88,7 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
         {
             _logger.LogError(ex, "Unexpected error during summarization orchestration");
             return SummarizationResult.CreateFailure(
-                "An unexpected error occurred while processing your request. Please try again.", 
+                "An unexpected error occurred while processing your request. Please try again.",
                 request.ContentType.ToString());
         }
         finally
@@ -114,14 +114,14 @@ public class SummarizationOrchestrator : ISummarizationOrchestrator
                 // SECURITY: Sanitize URL before logging to prevent log injection attacks
                 var sanitizedUrl = LogSanitizer.SanitizeUrl(request.Content);
                 _logger.LogInformation("Extracting content from URL: {Url}", sanitizedUrl);
-                
+
                 var extractedContent = await _extractor.ExtractAsync(request.Content, cancellationToken);
-                
+
                 if (!extractedContent.Success)
                 {
                     return TextContentResult.CreateFailure(extractedContent.ErrorMessage ?? "Failed to extract content from URL");
                 }
-                
+
                 _logger.LogInformation("Successfully extracted {Length} characters from URL", extractedContent.Content.Length);
                 return TextContentResult.CreateSuccess(extractedContent.Content);
 

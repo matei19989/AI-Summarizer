@@ -11,7 +11,7 @@ public class ContentValidationService : IContentValidator
 {
     private readonly ILogger<ContentValidationService> _logger;
     private readonly HttpClient _httpClient;
-    
+
     private const int MinTextLength = 50;
     private const int MaxTextLength = 10000;
     private const int UrlTimeoutSeconds = 10;
@@ -45,7 +45,7 @@ public class ContentValidationService : IContentValidator
         if (string.IsNullOrWhiteSpace(request.Content))
         {
             return ValidationResult.Failure(
-                "Content cannot be empty. Please provide text to summarize or a valid URL.", 
+                "Content cannot be empty. Please provide text to summarize or a valid URL.",
                 ValidationErrorType.EmptyContent);
         }
 
@@ -54,7 +54,7 @@ public class ContentValidationService : IContentValidator
             ContentType.Text => ValidateTextContent(request.Content),
             ContentType.Url => ValidateUrlFormat(request.Content),
             _ => ValidationResult.Failure(
-                $"Unsupported content type: {request.ContentType}", 
+                $"Unsupported content type: {request.ContentType}",
                 ValidationErrorType.UnsupportedContentType)
         };
     }
@@ -85,7 +85,7 @@ public class ContentValidationService : IContentValidator
     private ValidationResult ValidateUrlFormat(string url)
     {
         var urlPattern = @"^https?://[^\s/$.?#].[^\s]*$";
-        
+
         if (!Regex.IsMatch(url.Trim(), urlPattern, RegexOptions.IgnoreCase))
         {
             return ValidationResult.Failure(
@@ -102,7 +102,7 @@ public class ContentValidationService : IContentValidator
         try
         {
             _httpClient.Timeout = TimeSpan.FromSeconds(UrlTimeoutSeconds);
-            
+
             if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
             {
                 _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AISummarizer/1.0)");
@@ -113,14 +113,14 @@ public class ContentValidationService : IContentValidator
             _logger.LogDebug("Checking URL accessibility: {Url}", sanitizedUrl);
 
             using var response = await _httpClient.SendAsync(
-                new HttpRequestMessage(HttpMethod.Head, url), 
+                new HttpRequestMessage(HttpMethod.Head, url),
                 cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("URL accessibility check failed: {StatusCode} for {Url}", 
+                _logger.LogWarning("URL accessibility check failed: {StatusCode} for {Url}",
                     response.StatusCode, sanitizedUrl);
-                
+
                 return ValidationResult.Failure(
                     $"The URL is not accessible (HTTP {(int)response.StatusCode}). " +
                     "Please check the URL and ensure it's publicly available.",
@@ -141,7 +141,7 @@ public class ContentValidationService : IContentValidator
             // SECURITY: Sanitize URL before logging
             var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
             _logger.LogWarning(ex, "HTTP error during URL accessibility check for: {Url}", sanitizedUrl);
-            
+
             return ValidationResult.Failure(
                 "Could not connect to the URL. Please verify the URL is correct and accessible.",
                 ValidationErrorType.NetworkAccessibility);
@@ -151,7 +151,7 @@ public class ContentValidationService : IContentValidator
             // SECURITY: Sanitize URL before logging
             var sanitizedUrl = LogSanitizer.SanitizeUrl(url);
             _logger.LogError(ex, "Unexpected error during URL validation for: {Url}", sanitizedUrl);
-            
+
             return ValidationResult.Failure(
                 "Could not validate the URL. Please try again.",
                 ValidationErrorType.NetworkAccessibility);
