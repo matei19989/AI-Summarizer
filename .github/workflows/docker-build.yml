@@ -221,7 +221,7 @@ jobs:
         echo "Backend Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
         
     - name: Trigger Azure deployment webhook
-      if: secrets.AZURE_WEBHOOK_URL != ''
+      if: ${{ github.secrets.AZURE_WEBHOOK_URL != '' }}
       run: |
         curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}" \
           -H "Content-Type: application/json" \
