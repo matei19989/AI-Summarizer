@@ -67,13 +67,13 @@ public class SummarizationController : ControllerBase
             // Model state validation - also an HTTP/presentation concern
             if (!ModelState.IsValid)
             {
-                _logger.LogWarning("Model validation failed: {Errors}", 
+                _logger.LogWarning("Model validation failed: {Errors}",
                     string.Join(", ", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage)));
-                
+
                 var firstError = ModelState.Values
                     .SelectMany(v => v.Errors)
                     .FirstOrDefault()?.ErrorMessage ?? "Invalid request format";
-                
+
                 return BadRequest(_responseFormatter.FormatSystemError<SummarizationResponse>(firstError));
             }
 
@@ -130,11 +130,11 @@ public class SummarizationController : ControllerBase
     public async Task<ActionResult> GetHealth(CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Health check requested");
-        
+
         try
         {
             var isHealthy = await _orchestrator.IsHealthyAsync(cancellationToken);
-            
+
             var healthResponse = new
             {
                 Service = "AI Content Summarizer",
@@ -154,7 +154,7 @@ public class SummarizationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Health check failed");
-            
+
             var errorResponse = new
             {
                 Service = "AI Content Summarizer",
@@ -162,7 +162,7 @@ public class SummarizationController : ControllerBase
                 Timestamp = DateTime.UtcNow,
                 Error = "Health check failed"
             };
-            
+
             return StatusCode(503, errorResponse);
         }
     }
@@ -189,7 +189,7 @@ public class SummarizationController : ControllerBase
             },
             new
             {
-                Type = "url", 
+                Type = "url",
                 Description = "URL to extract content from and summarize",
                 MinLength = 0,
                 MaxLength = 0,
@@ -211,10 +211,10 @@ public class SummarizationController : ControllerBase
             Name = "AI Content Summarizer API",
             Version = "2.0.0",
             Description = "Generates AI-powered summaries from text content or web URLs",
-            
+
             SupportedContentTypes = supportedContentTypes,
             Features = features,
-            
+
             Architecture = new
             {
                 Pattern = "Clean Architecture with Domain-Driven Design",

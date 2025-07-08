@@ -29,20 +29,20 @@ public class SmartReaderContentExtractor : IContentExtractor
         try
         {
             var reader = new Reader(url);
-            
+
             var extractionTask = reader.GetArticleAsync();
             var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
-            
+
             var completedTask = await Task.WhenAny(extractionTask, timeoutTask);
-            
+
             if (completedTask == timeoutTask)
             {
                 if (cancellationToken.IsCancellationRequested)
                     throw new OperationCanceledException(cancellationToken);
-                    
+
                 throw new TimeoutException("Content extraction timed out after 30 seconds");
             }
-            
+
             var article = await extractionTask;
 
             if (article == null || string.IsNullOrWhiteSpace(article.Content))
@@ -54,7 +54,7 @@ public class SmartReaderContentExtractor : IContentExtractor
             }
 
             var cleanContent = CleanExtractedHtmlContent(article.Content);
-            
+
             if (cleanContent.Length < 50)
             {
                 return ExtractedContent.CreateFailure(
@@ -104,7 +104,7 @@ public class SmartReaderContentExtractor : IContentExtractor
         {
             using var request = new HttpRequestMessage(HttpMethod.Head, url);
             using var response = await _httpClient.SendAsync(request, cancellationToken);
-            
+
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -124,7 +124,7 @@ public class SmartReaderContentExtractor : IContentExtractor
         var cleanText = Regex.Replace(htmlContent, @"<[^>]*>", " ");
         cleanText = System.Net.WebUtility.HtmlDecode(cleanText);
         cleanText = Regex.Replace(cleanText, @"\s+", " ");
-        
+
         return cleanText.Trim();
     }
 }

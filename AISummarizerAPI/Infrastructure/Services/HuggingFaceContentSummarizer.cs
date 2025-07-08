@@ -73,10 +73,10 @@ public class HuggingFaceContentSummarizer : IContentSummarizer
             return string.Empty;
 
         var processed = System.Text.RegularExpressions.Regex.Replace(content.Trim(), @"\s+", " ");
-        processed = System.Text.RegularExpressions.Regex.Replace(processed, 
-            @"\b(Click here|Read more|Subscribe|Advertisement)\b", "", 
+        processed = System.Text.RegularExpressions.Regex.Replace(processed,
+            @"\b(Click here|Read more|Subscribe|Advertisement)\b", "",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        
+
         if (processed.Length > 4000)
         {
             processed = processed.Substring(0, 4000);
@@ -96,19 +96,19 @@ public class HuggingFaceContentSummarizer : IContentSummarizer
             return "Unable to generate summary.";
 
         var processed = summary.Trim();
-        
+
         if (processed.Length > 0 && char.IsLower(processed[0]))
         {
             processed = char.ToUpper(processed[0]) + processed.Substring(1);
         }
-        
+
         if (!processed.EndsWith('.') && !processed.EndsWith('!') && !processed.EndsWith('?'))
         {
             processed += ".";
         }
-        
+
         processed = processed.Replace("Summary:", "").Trim();
-        
+
         return processed;
     }
 
@@ -119,13 +119,13 @@ public class HuggingFaceContentSummarizer : IContentSummarizer
 
         if (technicalError.Contains("loading", StringComparison.OrdinalIgnoreCase))
             return "The AI service is starting up. Please try again in a moment.";
-        
+
         if (technicalError.Contains("rate limit", StringComparison.OrdinalIgnoreCase))
             return "The service is currently busy. Please wait a moment and try again.";
-        
+
         if (technicalError.Contains("timeout", StringComparison.OrdinalIgnoreCase))
             return "The request took too long to process. Please try with shorter content.";
-        
+
         if (technicalError.Contains("authentication", StringComparison.OrdinalIgnoreCase))
             return "The AI service is temporarily unavailable. Please try again later.";
 

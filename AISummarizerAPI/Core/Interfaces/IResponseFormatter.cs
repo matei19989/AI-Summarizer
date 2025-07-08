@@ -14,13 +14,13 @@ public interface IResponseFormatter
     /// Handles different success/failure scenarios consistently
     /// </summary>
     T FormatResponse<T>(SummarizationResult result) where T : class;
-    
+
     /// <summary>
     /// Formats validation errors in a user-friendly way
     /// Consistent error formatting across all endpoints
     /// </summary>
     T FormatValidationError<T>(ValidationResult validationResult) where T : class;
-    
+
     /// <summary>
     /// Formats system errors (exceptions, infrastructure failures)
     /// Ensures we never leak internal details to the API consumer

@@ -14,7 +14,7 @@ public interface IContentExtractor
     /// Returns domain model instead of infrastructure-specific types
     /// </summary>
     Task<ExtractedContent> ExtractAsync(string url, CancellationToken cancellationToken = default);
-    
+
     /// <summary>
     /// Checks if a URL is accessible before attempting extraction
     /// Useful for quick validation without full extraction overhead

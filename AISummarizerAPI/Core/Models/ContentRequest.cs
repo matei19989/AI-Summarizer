@@ -9,7 +9,7 @@ public class ContentRequest
     public string Content { get; set; } = string.Empty;
     public ContentType ContentType { get; set; }
     public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
-    
+
     /// <summary>
     /// Factory method to create from DTOs - encapsulates creation logic
     /// </summary>
@@ -21,7 +21,7 @@ public class ContentRequest
             ContentType = ContentType.Text
         };
     }
-    
+
     public static ContentRequest FromUrl(string url)
     {
         return new ContentRequest

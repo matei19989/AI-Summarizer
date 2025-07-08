@@ -1,9 +1,8 @@
-permissions:
-  contents: read
 name: Backend CI
 
 permissions:
   contents: read
+  security-events: write
 
 on:
   push:
@@ -12,21 +11,104 @@ on:
       - 'AISummarizerAPI/**'
       - '.github/workflows/backend-ci.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
     paths: 
       - 'AISummarizerAPI/**'
       - '.github/workflows/backend-ci.yml'
 
+env:
+  DOTNET_VERSION: '9.0.x'
+  WORKING_DIRECTORY: ./AISummarizerAPI
+
 jobs:
-  backend-build-and-test:
-    permissions:
-      contents: read
+  build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dotnet-version: ['9.0.x']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    defaults:
-      run:
-        working-directory: ./AISummarizerAPI
+    - name: Setup .NET ${{ matrix.dotnet-version }}
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ matrix.dotnet-version }}
 
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: dotnet restore
+
+    - name: Build
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Run tests
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        if find . -name "*Tests.csproj" -o -name "*Test.csproj" | grep -q .; then
+          dotnet test --no-build --configuration Release \
+            --logger "trx;LogFileName=test-results.trx" \
+            --logger "console;verbosity=detailed" \
+            --collect:"XPlat Code Coverage" \
+            /p:CollectCoverage=true \
+            /p:CoverletOutputFormat=opencover \
+            --results-directory ./TestResults
+        else
+          echo "::warning::No test projects found. Consider adding unit tests."
+        fi
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.dotnet-version }}
+        path: ${{ env.WORKING_DIRECTORY }}/TestResults/
+        retention-days: 7
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: './AISummarizerAPI'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy scan results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Check for security vulnerabilities
+      run: |
+        if grep -q "HIGH\|CRITICAL" trivy-results.sarif; then
+          echo "::error::Security vulnerabilities found!"
+          exit 1
+        fi
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -34,53 +116,24 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: |
-          8.0.x
-          9.0.x
+        dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Restore dependencies
-      run: dotnet restore
-
-    - name: Build project
-      run: dotnet build --no-restore --configuration Release
-
-    - name: Run tests (if available)
+    - name: Install dotnet tools
       run: |
-        if find . -name "*.csproj" -exec grep -l "Microsoft.NET.Test.Sdk" {} \; | head -1; then
-          echo "Test project found, running tests..."
-          dotnet test --no-build --configuration Release --logger trx --collect:"XPlat Code Coverage" --verbosity normal
-        else
-          echo "No test projects found, skipping tests..."
-        fi
+        dotnet tool install --global dotnet-format
+        dotnet tool install --global dotnet-reportgenerator-globaltool
 
-    - name: Publish application
-      run: dotnet publish --no-build --configuration Release --output ./publish
+    - name: Check code formatting
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: dotnet format --verify-no-changes --verbosity diagnostic
 
-    - name: Upload publish artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: backend-publish
-        path: AISummarizerAPI/publish/
-        retention-days: 7
+    - name: Run code analysis
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        dotnet build --configuration Release \
+          /p:EnableNETAnalyzers=true \
+          /p:AnalysisLevel=latest \
+          /p:TreatWarningsAsErrors=true
 
-  deploy-to-azure:
-    permissions:
-      contents: read
-      deployments: write
-    runs-on: ubuntu-latest
-    needs: backend-build-and-test
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: backend-publish
-        path: ./publish
-
-    - name: Deploy to Azure Web App
-      uses: azure/webapps-deploy@v3
-      with:
-        app-name: AISummarizer2026
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: './publish'
+  # Container deployment handled by docker-build.yml
+  # Traditional Azure deployment REMOVED for full container strategy

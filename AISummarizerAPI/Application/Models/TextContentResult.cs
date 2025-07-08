@@ -11,9 +11,9 @@ internal class TextContentResult
     public string Content { get; set; } = string.Empty;
     public bool Success { get; set; }
     public string? ErrorMessage { get; set; }
-    
+
     public bool IsFailure => !Success;
-    
+
     public static TextContentResult CreateSuccess(string content)
     {
         return new TextContentResult
@@ -22,7 +22,7 @@ internal class TextContentResult
             Success = true
         };
     }
-    
+
     public static TextContentResult CreateFailure(string errorMessage)
     {
         return new TextContentResult
@@ -31,14 +31,14 @@ internal class TextContentResult
             ErrorMessage = errorMessage
         };
     }
-    
+
     /// <summary>
     /// Converts to domain model for external consumption
     /// This encapsulates the mapping logic within the application layer
     /// </summary>
     public SummarizationResult ToSummarizationResult(string sourceType)
     {
-        return Success 
+        return Success
             ? SummarizationResult.CreateSuccess(Content, sourceType, TimeSpan.Zero)
             : SummarizationResult.CreateFailure(ErrorMessage ?? "Unknown error", sourceType);
     }
