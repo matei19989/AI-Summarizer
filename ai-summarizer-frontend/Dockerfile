@@ -1,54 +1,58 @@
 # ===================================================================
-# Multi-stage Dockerfile for React + Vite Frontend
-# Supports different nginx configurations for dev/prod
+# Multi-stage Dockerfile for React + Vite Frontend - Optimized
 # ===================================================================
 
-# Build stage - use Node.js to build the React application
-FROM node:18-alpine AS build
-
+# Stage 1: Dependencies
+FROM node:20-alpine AS dependencies
 WORKDIR /app
-
-# Copy package files first for better layer caching
+# Copy package files
 COPY package*.json ./
+# Install production dependencies
+RUN npm ci --only=production
 
-# Install ALL dependencies (including devDependencies for build)
+# Stage 2: Build
+FROM node:20-alpine AS build
+WORKDIR /app
+# Copy package files
+COPY package*.json ./
+# Install ALL dependencies (including dev)
 RUN npm ci
-
-# Copy all source code
+# Copy source code
 COPY . .
-
-# Build the application for production
+# Build the application
 RUN npm run build
 
-# ===================================================================
-# Production stage - use nginx to serve static files
-FROM nginx:alpine AS runtime
-
-# Remove default nginx website
-RUN rm /etc/nginx/conf.d/default.conf
-
-# Copy nginx configurations
-COPY nginx.dev.conf /etc/nginx/conf.d/nginx.dev.conf
-COPY nginx.prod.conf /etc/nginx/conf.d/nginx.prod.conf
-
-# Copy built React application from build stage
+# Stage 3: Production runtime
+FROM nginx:alpine AS production
+# Remove default nginx config
+RUN rm -rf /etc/nginx/conf.d/*
+# Copy custom nginx config
+COPY nginx/nginx.prod.conf /etc/nginx/conf.d/default.conf
+# Copy built application
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# Copy startup script that will choose the right config and make it executable
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-
-# Ensure proper permissions
-RUN chown -R nginx:nginx /usr/share/nginx/html
-RUN chmod -R 755 /usr/share/nginx/html
-
-# Expose port 80
+# Add custom error pages
+COPY nginx/error-pages/ /usr/share/nginx/html/
+# Create non-root user and fix permissions in one layer
+RUN addgroup -g 1001 -S nginx-user && \
+    adduser -u 1001 -S nginx-user -G nginx-user && \
+    chown -R nginx-user:nginx-user /usr/share/nginx/html && \
+    chown -R nginx-user:nginx-user /var/cache/nginx && \
+    chown -R nginx-user:nginx-user /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx-user:nginx-user /var/run/nginx.pid && \
+    chmod -R 755 /usr/share/nginx/html && \
+    find /usr/share/nginx/html -type f -exec chmod 644 {} \;
+# Switch to non-root user
+USER nginx-user
 EXPOSE 80
-
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+CMD ["nginx", "-g", "daemon off;"]
 
-# Use custom entrypoint to select config
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Stage 4: Development runtime (optional, for docker-compose override)
+FROM nginx:alpine AS development
+RUN rm -rf /etc/nginx/conf.d/*
+COPY nginx/nginx.dev.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

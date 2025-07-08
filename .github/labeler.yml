@@ -1,0 +1,69 @@
+# Configuration for PR labeler action
+# Automatically labels PRs based on changed files
+
+backend:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'AISummarizerAPI/**'
+      - '**/*.cs'
+      - '**/*.csproj'
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'ai-summarizer-frontend/**'
+      - '**/*.jsx'
+      - '**/*.js'
+      - '**/*.css'
+
+docker:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/Dockerfile*'
+      - 'docker-compose*.yml'
+      - '**/.dockerignore'
+
+workflows:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/package*.json'
+      - '**/*.csproj'
+      - '**/requirements.txt'
+      - '.github/dependabot.yml'
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/*.md'
+
+security:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*security*'
+      - '**/*auth*'
+      - '**/SECURITY.md'
+
+configuration:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.json'
+      - '**/*.yml'
+      - '**/*.yaml'
+      - '**/*.config'
+      - '**/appsettings*.json'
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*test*'
+      - '**/*spec*'
+      - '**/tests/**'
+      - '**/test/**'

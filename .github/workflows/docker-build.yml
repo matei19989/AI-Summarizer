@@ -1,132 +1,249 @@
-# ===================================================================
-# Docker Image Build and Push Workflow - Azure Optimized
-# This workflow builds and pushes your backend container to GitHub Container Registry
-# Azure Web App for Containers will pull from this registry automatically
-# ===================================================================
-
-name: Build and Push Backend for Azure
+name: Build and Push Docker Images
 
 on:
-  # Trigger on pushes to main branch (production releases)
   push:
     branches: [ main ]
-    # Only trigger if backend code changes
     paths:
       - 'AISummarizerAPI/**'
+      - 'ai-summarizer-frontend/**'
       - '.github/workflows/docker-build.yml'
-  
-  # Allow manual workflow execution for testing
+      - 'docker-compose*.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'AISummarizerAPI/**'
+      - 'ai-summarizer-frontend/**'
+      - '.github/workflows/docker-build.yml'
   workflow_dispatch:
     inputs:
-      force_deploy:
-        description: 'Force deployment even without code changes'
+      force_build:
+        description: 'Force rebuild all images'
         type: boolean
         default: false
+      push_images:
+        description: 'Push images to registry'
+        type: boolean
+        default: true
 
-# Environment variables used across all jobs
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE_NAME: aisummarizer-backend
+  BACKEND_IMAGE: aisummarizer-backend
+  FRONTEND_IMAGE: aisummarizer-frontend
 
-# Required permissions for pushing to GitHub Container Registry
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 jobs:
-  # Build and push backend Docker image for Azure
-  build-and-push-backend:
+  changed-files:
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build.outputs.digest }}
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      # Set up Docker Buildx for advanced build features
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      # Log in to GitHub Container Registry
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      # Generate image name (convert to lowercase for Docker compatibility)
-      - name: Generate image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE_NAME }}
-          tags: |
-            # Tag with 'latest' for main branch (Azure will use this)
-            type=raw,value=latest,enable={{is_default_branch}}
-            # Tag with commit SHA for unique identification
-            type=sha,prefix=sha-
-            # Tag with timestamp for easy identification
-            type=schedule,pattern={{date 'YYYYMMDD-HHmmss'}}
-      
-      # Build and push backend Docker image
-      - name: Build and push backend image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: ./AISummarizerAPI
-          file: ./AISummarizerAPI/Dockerfile
-          platforms: linux/amd64  # Azure Web Apps typically use amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Enable build caching for faster subsequent builds
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          # Build arguments for optimization
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-      
-      # Output image information for verification
-      - name: Output image details
-        run: |
-          echo "🐳 Backend image built and pushed successfully!"
-          echo "📦 Image: ${{ steps.meta.outputs.tags }}"
-          echo "🔍 Digest: ${{ steps.build.outputs.digest }}"
-          echo "🌐 This image is now ready for Azure Web App deployment"
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-  # Test the built image (optional but recommended)
-  test-container:
+    - name: Check changed paths
+      uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          backend:
+            - 'AISummarizerAPI/**'
+            - '.github/workflows/docker-build.yml'
+          frontend:
+            - 'ai-summarizer-frontend/**'
+            - '.github/workflows/docker-build.yml'
+
+  build-backend:
+    needs: changed-files
+    if: needs.changed-files.outputs.backend == 'true' || github.event.inputs.force_build == 'true'
     runs-on: ubuntu-latest
-    needs: build-and-push-backend
-    if: github.ref == 'refs/heads/main'
     
     steps:
-      - name: Test container startup
-        run: |
-          echo "🧪 Testing container startup..."
-          # Pull the image we just built
-          docker pull ghcr.io/matei19989/aisummarizer-backend:latest
-          
-          # Run container in background
-          docker run -d --name test-container -p 8080:80 \
-            -e HuggingFace__ApiToken="dummy-token" \
-            ghcr.io/matei19989/aisummarizer-backend:latest
-          
-          # Wait for container to start
-          sleep 30
-          
-          # Test health endpoint
-          if curl -f http://localhost:8080/api/summarization/health; then
-            echo "✅ Container health check passed!"
-          else
-            echo "❌ Container health check failed!"
-            docker logs test-container
-            exit 1
-          fi
-          
-          # Clean up
-          docker stop test-container
-          docker rm test-container
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          network=host
+          image=moby/buildkit:latest
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./AISummarizerAPI
+        file: ./AISummarizerAPI/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' && github.event.inputs.push_images != 'false' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ github.event.repository.updated_at }}
+          VCS_REF=${{ github.sha }}
+        sbom: true
+        provenance: true
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest
+        format: 'sarif'
+        output: 'backend-trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'backend-trivy-results.sarif'
+        category: 'backend-container'
+
+  build-frontend:
+    needs: changed-files
+    if: needs.changed-files.outputs.frontend == 'true' || github.event.inputs.force_build == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./ai-summarizer-frontend
+        file: ./ai-summarizer-frontend/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' && github.event.inputs.push_images != 'false' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        target: production
+        build-args: |
+          BUILD_DATE=${{ github.event.repository.updated_at }}
+          VCS_REF=${{ github.sha }}
+        sbom: true
+        provenance: true
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest
+        format: 'sarif'
+        output: 'frontend-trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'frontend-trivy-results.sarif'
+        category: 'frontend-container'
+
+  integration-test:
+    needs: [build-backend, build-frontend]
+    if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Compose
+      run: |
+        docker compose version
+        
+    - name: Create test environment file
+      run: |
+        echo "HUGGINGFACE_API_TOKEN=test-token" > .env.test
+        echo "NODE_ENV=test" >> .env.test
+
+    - name: Test Docker Compose setup
+      run: |
+        docker compose -f docker-compose.yml -f docker-compose.override.yml config
+
+    - name: Run integration tests
+      run: |
+        # Start services
+        docker compose up -d
+        
+        # Wait for services to be healthy
+        timeout 60s bash -c 'until docker compose ps | grep -q "healthy"; do sleep 2; done'
+        
+        # Run basic health checks
+        curl -f http://localhost:3000/health || exit 1
+        curl -f http://localhost:5088/api/summarization/health || exit 1
+        
+        # Clean up
+        docker compose down -v
+
+  update-azure:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [build-backend, integration-test]
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Notify Azure deployment
+      run: |
+        echo "::notice::Backend image updated. Azure Web App will pull the latest image on next restart."
+        
+    - name: Trigger Azure webhook (if configured)
+      if: env.AZURE_WEBHOOK_URL != ''
+      env:
+        AZURE_WEBHOOK_URL: ${{ secrets.AZURE_WEBHOOK_URL }}
+      run: |
+        curl -X POST $AZURE_WEBHOOK_URL \
+          -H "Content-Type: application/json" \
+          -d '{"image": "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"}'

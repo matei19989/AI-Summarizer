@@ -1,0 +1,156 @@
+name: Security Scanning
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Every Monday at 2 AM
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/package*.json'
+      - '**/*.csproj'
+      - '**/Dockerfile'
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run OWASP Dependency Check
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        project: 'AI-Summarizer'
+        path: '.'
+        format: 'ALL'
+        args: >
+          --enableRetired
+          --enableExperimental
+        
+    - name: Upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-check-report
+        path: reports/
+        retention-days: 30
+
+  dotnet-security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Install security tools
+      run: |
+        dotnet tool install --global security-scan
+        dotnet tool install --global dotnet-outdated-tool
+
+    - name: Check for vulnerable packages
+      working-directory: ./AISummarizerAPI
+      run: |
+        dotnet list package --vulnerable --include-transitive
+        
+    - name: Check for outdated packages
+      working-directory: ./AISummarizerAPI
+      run: |
+        dotnet-outdated -f -td 3 || echo "::warning::Outdated packages found"
+
+  npm-security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run npm audit
+      working-directory: ./ai-summarizer-frontend
+      run: |
+        npm audit --json > npm-audit-report.json || true
+        
+        # Parse and report critical issues
+        if [ -f npm-audit-report.json ]; then
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json)
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json)
+          
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::error::Found $CRITICAL critical and $HIGH high vulnerabilities"
+            npm audit
+          fi
+        fi
+
+    - name: Upload npm audit report
+      uses: actions/upload-artifact@v4
+      with:
+        name: npm-audit-report
+        path: ./ai-summarizer-frontend/npm-audit-report.json
+        retention-days: 30
+
+  container-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build image for scanning
+      run: |
+        if [ "${{ matrix.image }}" = "backend" ]; then
+          docker build -t scan-image ./AISummarizerAPI
+        else
+          docker build -t scan-image ./ai-summarizer-frontend
+        fi
+
+    - name: Run Grype vulnerability scanner
+      uses: anchore/scan-action@v3
+      with:
+        image: scan-image
+        fail-build: false
+        severity-cutoff: high
+
+    - name: Run Syft SBOM generator
+      uses: anchore/sbom-action@v0
+      with:
+        image: scan-image
+        format: spdx-json
+
+  create-issues:
+    needs: [dependency-check, dotnet-security, npm-security, container-scan]
+    runs-on: ubuntu-latest
+    if: failure()
+    
+    steps:
+    - name: Create security issue
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const date = new Date().toISOString().split('T')[0];
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Security Scan Alert - ${date}`,
+            body: `## Security Scan Results\n\nThe automated security scan has found vulnerabilities that need attention.\n\n### Scan Results\n- Workflow Run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n- Branch: ${{ github.ref }}\n- Commit: ${{ github.sha }}\n\nPlease review the workflow logs and artifacts for detailed information.`,
+            labels: ['security', 'automated']
+          });
+          
+          console.log(`Created issue #${issue.data.number}`);

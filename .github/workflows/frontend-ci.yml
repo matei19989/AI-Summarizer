@@ -1,5 +1,9 @@
 name: Frontend CI
 
+permissions:
+  contents: read
+  security-events: write
+
 on:
   push:
     branches: [ main, develop ]
@@ -7,52 +11,173 @@ on:
       - 'ai-summarizer-frontend/**'
       - '.github/workflows/frontend-ci.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
     paths: 
       - 'ai-summarizer-frontend/**'
       - '.github/workflows/frontend-ci.yml'
 
+env:
+  NODE_VERSION: '20'
+  WORKING_DIRECTORY: ./ai-summarizer-frontend
+
 jobs:
-  frontend-build-and-test:
+  build-and-test:
     runs-on: ubuntu-latest
-    
-    defaults:
-      run:
-        working-directory: ./ai-summarizer-frontend
+    strategy:
+      matrix:
+        node-version: ['18', '20']
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Setup Node.js
+
+    - name: Setup Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
-    
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: ${{ env.WORKING_DIRECTORY }}/package-lock.json
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.WORKING_DIRECTORY }}/node_modules
+        key: ${{ runner.os }}-node-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-${{ matrix.node-version }}-
+
     - name: Install dependencies
+      working-directory: ${{ env.WORKING_DIRECTORY }}
       run: npm ci
-    
-    - name: Check for linting issues
-      run: npm run lint --if-present
-      continue-on-error: true
-    
-    - name: Run tests (if available)
+
+    - name: Run linting
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        npm run lint || echo "::warning::Linting issues found. Please fix them."
+
+    - name: Type check (if TypeScript)
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        if [ -f "tsconfig.json" ]; then
+          npm run type-check || echo "::warning::Type checking not configured"
+        else
+          echo "::warning::Consider migrating to TypeScript for better type safety"
+        fi
+
+    - name: Run tests
+      working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
         if npm run | grep -q "test"; then
-          echo "Running tests..."
           npm test -- --coverage --watchAll=false --passWithNoTests
         else
-          echo "No test script found in package.json, skipping tests..."
+          echo "::warning::No test script found. Please add tests to your project."
         fi
-      env:
-        CI: true
-    
+
+    - name: Upload coverage reports
+      if: matrix.node-version == env.NODE_VERSION
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ${{ env.WORKING_DIRECTORY }}/coverage
+        flags: frontend
+        fail_ci_if_error: false
+
     - name: Build application
-      run: npm run build
-    
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        npm run build
+        echo "Build size report:"
+        du -sh dist/
+
     - name: Upload build artifacts
+      if: matrix.node-version == env.NODE_VERSION
       uses: actions/upload-artifact@v4
       with:
         name: frontend-build
-        path: ai-summarizer-frontend/dist/
+        path: ${{ env.WORKING_DIRECTORY }}/dist/
         retention-days: 7
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Run npm audit
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        npm audit --production --audit-level=moderate || echo "::warning::Vulnerabilities found in dependencies"
+
+    - name: Run Snyk security scan
+      uses: snyk/actions/node@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high --file=${{ env.WORKING_DIRECTORY }}/package.json
+
+  lighthouse-check:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-build
+        path: ./dist
+
+    - name: Run Lighthouse CI
+      uses: treosh/lighthouse-ci-action@v11
+      with:
+        staticDistDir: ./dist
+        uploadArtifacts: true
+        temporaryPublicStorage: true
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./ai-summarizer-frontend
+        file: ./ai-summarizer-frontend/Dockerfile
+        push: false
+        target: production
+        tags: ai-summarizer-frontend:ci-${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker image
+      run: |
+        docker run -d --name test-frontend -p 8080:80 ai-summarizer-frontend:ci-${{ github.sha }}
+        sleep 5
+        curl -f http://localhost:8080/health || exit 1
+        docker stop test-frontend
+        docker rm test-frontend
+
+  deploy-preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan]
+    
+    steps:
+    - name: Deploy preview to Vercel
+      run: |
+        echo "::notice::Vercel preview deployments are handled automatically via GitHub integration"

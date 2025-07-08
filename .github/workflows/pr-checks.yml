@@ -1,11 +1,16 @@
 name: PR Quality Checks
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 on:
   pull_request:
-    branches: [ main, develop ]
+    types: [opened, synchronize, reopened]
 
 jobs:
-  code-quality-checks:
+  pr-validation:
     runs-on: ubuntu-latest
     
     steps:
@@ -13,39 +18,169 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    
-    - name: Check file changes
+
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v44
+      with:
+        separator: ","
+
+    - name: Check PR size
       run: |
-        echo "Files changed in this PR:"
-        git diff --name-only origin/${{ github.base_ref }}...HEAD
-    
-    - name: Validate workflow files
+        FILES_CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ',' '\n' | wc -l)
+        echo "Files changed: $FILES_CHANGED"
+        
+        if [ $FILES_CHANGED -gt 50 ]; then
+          echo "::warning::Large PR detected ($FILES_CHANGED files). Consider breaking it into smaller PRs."
+        fi
+
+    - name: Validate branch naming
       run: |
-        echo "Checking if workflow files are valid YAML..."
-        for file in .github/workflows/*.yml; do
-          if [ -f "$file" ]; then
-            echo "Checking $file"
-            # Basic YAML syntax check using Python
-            python3 -c "import yaml; yaml.safe_load(open('$file'))" || exit 1
+        BRANCH_NAME="${{ github.head_ref }}"
+        VALID_PATTERN="^(feature|fix|hotfix|release|docs|chore|refactor|test)\/[a-z0-9-]+$"
+        
+        if ! echo "$BRANCH_NAME" | grep -qE "$VALID_PATTERN"; then
+          echo "::warning::Branch name '$BRANCH_NAME' doesn't follow naming convention: type/description"
+        fi
+
+    - name: Check commit messages
+      run: |
+        # Check if commits follow conventional commits format
+        git log --format="%s" origin/${{ github.base_ref }}..HEAD | while read commit; do
+          if ! echo "$commit" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"; then
+            echo "::warning::Commit doesn't follow conventional format: $commit"
           fi
         done
+
+  secret-scanning:
+    runs-on: ubuntu-latest
     
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: TruffleHog secret scan
+      uses: trufflesecurity/trufflehog@main
+      with:
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+        extra_args: --only-verified
+
+    - name: Gitleaks scan
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  file-checks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Check for large files
       run: |
-        echo "Checking for files larger than 50MB..."
-        find . -type f -size +50M -not -path "./.git/*" -exec ls -lh {} \; | head -20
-    
-    - name: Check for common issues
+        echo "Checking for files larger than 10MB..."
+        find . -type f -size +10M -not -path "./.git/*" | while read file; do
+          SIZE=$(du -h "$file" | cut -f1)
+          echo "::warning::Large file detected: $file ($SIZE)"
+        done
+
+    - name: Check for sensitive file patterns
       run: |
-        echo "Checking for common issues..."
+        SENSITIVE_PATTERNS=(
+          "*.pem"
+          "*.key"
+          "*.p12"
+          "*.pfx"
+          "*_rsa"
+          "*_dsa"
+          "*.der"
+          "*.crt"
+          "*.cer"
+          ".env.*"
+          "secrets.*"
+        )
         
-        # Check for hardcoded secrets patterns (basic check)
-        if grep -r -E "(password|secret|key|token)\s*=\s*['\"][^'\"]*['\"]" --exclude-dir=.git --exclude-dir=node_modules .; then
-          echo "⚠️  Potential hardcoded secrets found. Please review."
-        else
-          echo "✅ No obvious hardcoded secrets found."
-        fi
+        for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+          if find . -name "$pattern" -not -path "./.git/*" | grep -q .; then
+            echo "::error::Sensitive file pattern detected: $pattern"
+            find . -name "$pattern" -not -path "./.git/*"
+          fi
+        done
+
+    - name: Validate JSON/YAML files
+      run: |
+        # Validate JSON files
+        find . -name "*.json" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
+          if ! python3 -m json.tool "$file" > /dev/null 2>&1; then
+            echo "::error::Invalid JSON file: $file"
+          fi
+        done
         
-        # Check for TODO/FIXME comments
-        echo "📝 TODOs and FIXMEs found:"
-        grep -r -n -E "(TODO|FIXME|HACK)" --exclude-dir=.git --exclude-dir=node_modules . || echo "None found."
+        # Validate YAML files
+        find . -name "*.yml" -o -name "*.yaml" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
+          if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+            echo "::error::Invalid YAML file: $file"
+          fi
+        done
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: moderate
+        deny-licenses: GPL-3.0, AGPL-3.0
+
+  pr-labeler:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+    - name: Label PR based on files changed
+      uses: actions/labeler@v5
+      with:
+        repo-token: "${{ secrets.GITHUB_TOKEN }}"
+        configuration-path: .github/labeler.yml
+
+  code-comments:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    
+    steps:
+    - name: Comment on PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = context.issue.number;
+          const prAuthor = context.payload.pull_request.user.login;
+          
+          // Check if this is the first PR from this user
+          const { data: prs } = await github.rest.pulls.list({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'all',
+            creator: prAuthor,
+            per_page: 2
+          });
+          
+          if (prs.length === 1) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `Welcome @${prAuthor}! 🎉 Thank you for your first contribution to this project!\n\nOur automated checks are running and will provide feedback shortly.`
+            });
+          }
