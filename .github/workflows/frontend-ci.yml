@@ -138,7 +138,8 @@ jobs:
     - name: Run Lighthouse CI
       uses: treosh/lighthouse-ci-action@v11
       with:
-        staticDistDir: ./dist
+        urls : |
+          http://localhost:8080/
         uploadArtifacts: true
         temporaryPublicStorage: true
 
@@ -160,7 +161,7 @@ jobs:
         file: ./ai-summarizer-frontend/Dockerfile
         push: false
         target: production
-        tags: ai-summarizer-frontend:ci-${{ github.sha }}
+        tags: localhost/ai-summarizer-frontend:ci-${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
