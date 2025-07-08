@@ -112,12 +112,12 @@ jobs:
 
     - name: Build backend image
       run: |
-        docker build -t aisummarizer-backend:scan ./AISummarizerAPI
+        docker build -t ${{ github.repository_owner }}/aisummarizer-backend:scan ./AISummarizerAPI
 
     - name: Run Grype vulnerability scanner
       uses: anchore/scan-action@v3
       with:
-        image: aisummarizer-backend:scan
+        image: ${{ github.repository_owner }}/aisummarizer-backend:scan
         fail-build: false
         severity-cutoff: high
         output-format: sarif
@@ -133,7 +133,7 @@ jobs:
     - name: Generate backend SBOM
       uses: anchore/sbom-action@v0
       with:
-        image: aisummarizer-backend:scan
+        image: ${{ github.repository_owner }}/aisummarizer-backend:scan
         format: spdx-json
         artifact-name: backend-sbom
 
@@ -146,12 +146,12 @@ jobs:
 
     - name: Build frontend image
       run: |
-        docker build -t aisummarizer-frontend:scan ./ai-summarizer-frontend
+        docker build -t ${{ github.repository_owner }}/aisummarizer-frontend:scan ./ai-summarizer-frontend
 
     - name: Run Grype vulnerability scanner
       uses: anchore/scan-action@v3
       with:
-        image: aisummarizer-frontend:scan
+        image: ${{ github.repository_owner }}/aisummarizer-frontend:scan
         fail-build: false
         severity-cutoff: high
         output-format: sarif
@@ -167,7 +167,7 @@ jobs:
     - name: Generate frontend SBOM
       uses: anchore/sbom-action@v0
       with:
-        image: aisummarizer-frontend:scan
+        image: ${{ github.repository_owner }}/aisummarizer-frontend:scan
         format: spdx-json
         artifact-name: frontend-sbom
 
