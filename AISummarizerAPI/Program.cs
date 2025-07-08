@@ -1,4 +1,4 @@
-// AISummarizerAPI/Program.cs - Merged and Enhanced Version for Azure Deployment and Clean Architecture
+// AISummarizerAPI/Program.cs - Container Strategy with Fixed CORS
 using AISummarizerAPI.Configuration;
 using AISummarizerAPI.Core.Interfaces;
 using AISummarizerAPI.Application.Interfaces;
@@ -35,7 +35,7 @@ builder.Services.AddScoped<ISummarizationOrchestrator, SummarizationOrchestrator
 builder.Services.AddScoped<IHuggingFaceApiClient, HuggingFaceApiClient>();
 
 // ===================================================================
-// HTTP Clients with Azure Optimized Settings and Polly Resilience
+// HTTP Clients with Container Optimized Settings
 // ===================================================================
 builder.Services.AddHttpClient<IContentValidator, ContentValidationService>(client =>
 {
@@ -91,12 +91,13 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // ===================================================================
-// CORS Configuration
+// CORS Configuration - FIXED for Container Strategy
 // ===================================================================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("ProductionPolicy", corsBuilder =>
+    options.AddPolicy("ContainerPolicy", corsBuilder =>
     {
+        // Get allowed origins from environment
         var allowedOrigins = builder.Configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
 
         if (!string.IsNullOrEmpty(allowedOrigins))
@@ -113,22 +114,28 @@ builder.Services.AddCors(options =>
         }
         else if (builder.Environment.IsDevelopment())
         {
+            // Development origins - includes Docker networking
             corsBuilder
                 .WithOrigins(
-                    "http://localhost:3000",
-                    "http://localhost:5173",
-                    "http://localhost:4173",
-                    "https://ai-summarizer-theta-ten.vercel.app")
+                    "http://localhost:3000",           // Local dev
+                    "http://localhost:5173",           // Vite dev server
+                    "http://localhost:4173",           // Vite preview
+                    "http://frontend:80",              // Docker container
+                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app"  // Current Vercel
+                )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
                 .AllowCredentials();
         }
         else
         {
+            // Production origins - FIXED for container deployment
             corsBuilder
                 .WithOrigins(
-                    "https://ai-summarizer-theta-ten.vercel.app",
-                    "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net")
+                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app",  // Current Vercel URL
+                    "https://ai-summarizer-theta-ten.vercel.app",                       // Old Vercel URL (backup)
+                    "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net"  // Azure URL
+                )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
                 .WithExposedHeaders("Content-Length", "Content-Type");
@@ -142,16 +149,16 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Application starting in Development mode with Clean Architecture");
+    logger.LogInformation("Application starting in Development mode with Container Strategy");
 }
 
-app.UseCors("ProductionPolicy");
+app.UseCors("ContainerPolicy");  // Use container-specific CORS policy
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
 // ===================================================================
-// Root Endpoint for Azure Monitoring
+// Root Endpoint for Container Monitoring
 // ===================================================================
 app.MapGet("/", (IServiceProvider serviceProvider) =>
 {
@@ -160,18 +167,17 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
     return new
     {
         Application = "AI Content Summarizer API",
-        Version = "2.0.1-Azure-Enhanced",
+        Version = "2.1.0-Container-Strategy",
         Environment = app.Environment.EnvironmentName,
-        Status = "Running with Enhanced Network Resilience",
+        Status = "Running with Full Container Deployment",
         Timestamp = DateTime.UtcNow,
 
-        NetworkOptimizations = new
+        ContainerOptimizations = new
         {
-            HttpClientTimeout = "120 seconds",
-            ConnectionPooling = "Enabled",
-            RetryPolicy = "Enabled with exponential backoff",
-            CircuitBreaker = "Enabled (5 failures trigger 30s break)",
-            ConnectionManagement = "Optimized for cloud-to-cloud communication"
+            DeploymentStrategy = "Container-based with Azure Web App for Containers",
+            Port = "80 (Container Standard)",
+            NetworkResilience = "Enhanced with Polly retry and circuit breaker",
+            CORS = "Configured for Vercel and Azure origins"
         },
 
         AI = new
@@ -192,7 +198,7 @@ app.MapGet("/", (IServiceProvider serviceProvider) =>
 });
 
 // ===================================================================
-// Startup Validation
+// Container Health Validation
 // ===================================================================
 using (var scope = app.Services.CreateScope())
 {
@@ -205,31 +211,31 @@ using (var scope = app.Services.CreateScope())
 
         if (isHealthy)
         {
-            logger.LogInformation("✅ Azure deployment with enhanced networking is healthy");
+            logger.LogInformation("✅ Container deployment is healthy and ready");
         }
         else
         {
-            logger.LogWarning("⚠️ Some services are not available - will retry with resilience policies");
+            logger.LogWarning("⚠️ Some services unavailable - container will retry with resilience policies");
         }
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "❌ Error during startup - resilience policies will handle runtime issues");
+        logger.LogError(ex, "❌ Container startup error - resilience policies will handle runtime issues");
     }
 
     var huggingFaceOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HuggingFaceOptions>>().Value;
     if (string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
     {
-        logger.LogWarning("⚠️ Hugging Face API token is not configured in Azure App Settings");
+        logger.LogWarning("⚠️ Hugging Face API token not configured - check container environment variables");
     }
     else
     {
-        logger.LogInformation("✅ Hugging Face API token is configured in Azure");
+        logger.LogInformation("✅ Hugging Face API token configured in container");
     }
 }
 
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
-startupLogger.LogInformation("🚀 AI Content Summarizer API v2.0.1 is running on Azure with enhanced resilience");
+startupLogger.LogInformation("🚀 AI Content Summarizer v2.1.0 running with Full Container Strategy");
 
 app.Run();
 
@@ -247,7 +253,7 @@ static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
             sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
             onRetry: (outcome, timespan, retryCount, context) =>
             {
-                Console.WriteLine($"🔄 Retry attempt {retryCount} after {timespan.TotalSeconds}s");
+                Console.WriteLine($"🔄 Container retry attempt {retryCount} after {timespan.TotalSeconds}s");
                 if (outcome.Exception != null)
                     Console.WriteLine($"   Reason: {outcome.Exception.GetType().Name} - {outcome.Exception.Message}");
                 else if (outcome.Result != null)
@@ -264,10 +270,10 @@ static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
             durationOfBreak: TimeSpan.FromSeconds(30),
             onBreak: (result, timespan) =>
             {
-                Console.WriteLine($"🚫 Circuit breaker OPENED. Will retry after {timespan.TotalSeconds}s.");
+                Console.WriteLine($"🚫 Container circuit breaker OPENED. Will retry after {timespan.TotalSeconds}s.");
             },
             onReset: () =>
             {
-                Console.WriteLine("✅ Circuit breaker CLOSED. Normal operation resumed.");
+                Console.WriteLine("✅ Container circuit breaker CLOSED. Normal operation resumed.");
             });
 }

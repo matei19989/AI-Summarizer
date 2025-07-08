@@ -2,9 +2,6 @@
 # Production Docker Compose Configuration
 # Use: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
 # ===================================================================
-
-version: '3.8'
-
 services:
   backend:
     build:

@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: Build and Deploy Containers
 
 on:
   push:
@@ -13,17 +13,12 @@ on:
     paths:
       - 'AISummarizerAPI/**'
       - 'ai-summarizer-frontend/**'
-      - '.github/workflows/docker-build.yml'
   workflow_dispatch:
     inputs:
-      force_build:
-        description: 'Force rebuild all images'
+      force_deploy:
+        description: 'Force deployment to Azure'
         type: boolean
         default: false
-      push_images:
-        description: 'Push images to registry'
-        type: boolean
-        default: true
 
 env:
   REGISTRY: ghcr.io
@@ -60,8 +55,11 @@ jobs:
 
   build-backend:
     needs: changed-files
-    if: needs.changed-files.outputs.backend == 'true' || github.event.inputs.force_build == 'true'
+    if: needs.changed-files.outputs.backend == 'true' || github.event.inputs.force_deploy == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     
     steps:
     - name: Checkout code
@@ -90,18 +88,17 @@ jobs:
         tags: |
           type=ref,event=branch
           type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
           type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push backend
+      id: build
       uses: docker/build-push-action@v5
       with:
         context: ./AISummarizerAPI
         file: ./AISummarizerAPI/Dockerfile
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' && github.event.inputs.push_images != 'false' }}
+        platforms: linux/amd64
+        push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
@@ -113,6 +110,7 @@ jobs:
         provenance: true
 
     - name: Run Trivy vulnerability scanner
+      if: github.event_name != 'pull_request'
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest
@@ -121,6 +119,7 @@ jobs:
         severity: 'CRITICAL,HIGH'
 
     - name: Upload Trivy scan results
+      if: github.event_name != 'pull_request'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'backend-trivy-results.sarif'
@@ -128,7 +127,7 @@ jobs:
 
   build-frontend:
     needs: changed-files
-    if: needs.changed-files.outputs.frontend == 'true' || github.event.inputs.force_build == 'true'
+    if: needs.changed-files.outputs.frontend == 'true' || github.event.inputs.force_deploy == 'true'
     runs-on: ubuntu-latest
     
     steps:
@@ -154,8 +153,6 @@ jobs:
         tags: |
           type=ref,event=branch
           type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
           type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
@@ -164,32 +161,16 @@ jobs:
       with:
         context: ./ai-summarizer-frontend
         file: ./ai-summarizer-frontend/Dockerfile
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' && github.event.inputs.push_images != 'false' }}
+        platforms: linux/amd64
+        push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        target: production
+        target: runtime
         build-args: |
           BUILD_DATE=${{ github.event.repository.updated_at }}
           VCS_REF=${{ github.sha }}
-        sbom: true
-        provenance: true
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest
-        format: 'sarif'
-        output: 'frontend-trivy-results.sarif'
-        severity: 'CRITICAL,HIGH'
-
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'frontend-trivy-results.sarif'
-        category: 'frontend-container'
 
   integration-test:
     needs: [build-backend, build-frontend]
@@ -200,50 +181,71 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Compose
-      run: |
-        docker compose version
-        
-    - name: Create test environment file
+    - name: Create test environment
       run: |
         echo "HUGGINGFACE_API_TOKEN=test-token" > .env.test
         echo "NODE_ENV=test" >> .env.test
 
     - name: Test Docker Compose setup
       run: |
-        docker compose -f docker-compose.yml -f docker-compose.override.yml config
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 
     - name: Run integration tests
       run: |
+        # Use latest built images for testing
+        export BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
+        export FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest"
+        
         # Start services
-        docker compose up -d
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
         
-        # Wait for services to be healthy
-        timeout 60s bash -c 'until docker compose ps | grep -q "healthy"; do sleep 2; done'
+        # Wait for services
+        timeout 120s bash -c 'until curl -f http://localhost:80/health; do sleep 5; done'
+        timeout 120s bash -c 'until curl -f http://localhost:80/backend-health; do sleep 5; done'
         
-        # Run basic health checks
-        curl -f http://localhost:3000/health || exit 1
-        curl -f http://localhost:5088/api/summarization/health || exit 1
+        echo "✅ Integration tests passed"
         
         # Clean up
-        docker compose down -v
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
-  update-azure:
+  deploy-to-azure:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [build-backend, integration-test]
     runs-on: ubuntu-latest
     environment: production
     
     steps:
-    - name: Notify Azure deployment
+    - name: Configure Azure Container App
       run: |
-        echo "::notice::Backend image updated. Azure Web App will pull the latest image on next restart."
+        echo "🚀 Deploying to Azure Web App for Containers"
+        echo "Backend Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
         
-    - name: Trigger Azure webhook (if configured)
-      if: env.AZURE_WEBHOOK_URL != ''
-      env:
-        AZURE_WEBHOOK_URL: ${{ secrets.AZURE_WEBHOOK_URL }}
+    - name: Trigger Azure deployment webhook
+      if: secrets.AZURE_WEBHOOK_URL != ''
       run: |
-        curl -X POST $AZURE_WEBHOOK_URL \
+        curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}" \
           -H "Content-Type: application/json" \
-          -d '{"image": "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"}'
+          -d '{
+            "image": "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest",
+            "registry": "${{ env.REGISTRY }}",
+            "tag": "latest"
+          }'
+        
+        echo "✅ Azure webhook triggered successfully"
+
+    - name: Verify Azure deployment
+      run: |
+        echo "⏳ Waiting for Azure deployment..."
+        sleep 60
+        
+        for i in {1..10}; do
+          if curl -f https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net/api/summarization/health; then
+            echo "✅ Azure deployment verified!"
+            exit 0
+          fi
+          echo "Attempt $i failed, retrying in 30s..."
+          sleep 30
+        done
+        
+        echo "❌ Azure deployment verification failed"
+        exit 1

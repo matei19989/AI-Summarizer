@@ -1,19 +1,13 @@
-# ===================================================================
-# Development Override Configuration
-# This file is automatically loaded by docker-compose in development
-# ===================================================================
-
-version: '3.8'
-
 services:
   backend:
     build:
       target: runtime
     ports:
-      - "5088:80"  # Expose for direct debugging
+      - "5088:80"  # Map external 5088 to internal 80
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_DETAILEDERRORS=true
+      - ASPNETCORE_URLS=http://+:80
       - Logging__LogLevel__Default=Debug
       - Logging__LogLevel__Microsoft=Information
       - Logging__LogLevel__Microsoft.Hosting.Lifetime=Information
@@ -21,7 +15,9 @@ services:
       - ./.env.development
     volumes:
       - ./AISummarizerAPI/logs:/app/logs
-      - ~/.microsoft/usersecrets:/root/.microsoft/usersecrets:ro
+      # FIXED: Remove usersecrets volume for Docker
+    networks:
+      - ai-summarizer-network
 
   frontend:
     build:
@@ -30,5 +26,8 @@ services:
       - "3000:80"
     environment:
       - NODE_ENV=development
-    volumes:
-      - ./ai-summarizer-frontend/nginx/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - ai-summarizer-network
