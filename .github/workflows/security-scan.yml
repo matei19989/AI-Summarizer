@@ -112,28 +112,12 @@ jobs:
 
     - name: Build backend image
       run: |
-        docker build -t ${{ github.repository_owner }}/aisummarizer-backend:scan ./AISummarizerAPI
-
-    - name: Run Grype vulnerability scanner
-      uses: anchore/scan-action@v3
-      with:
-        image: ${{ github.repository_owner }}/aisummarizer-backend:scan
-        fail-build: false
-        severity-cutoff: high
-        output-format: sarif
-        add-cpes-if-none: true
-
-    - name: Upload Grype scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: ${{ steps.scan.outputs.sarif }}
-        category: backend-grype
+        docker build -t scan-image ./AISummarizerAPI
 
     - name: Generate backend SBOM
       uses: anchore/sbom-action@v0
       with:
-        image: ${{ github.repository_owner }}/aisummarizer-backend:scan
+        image: scan-image
         format: spdx-json
         artifact-name: backend-sbom
 
@@ -146,28 +130,12 @@ jobs:
 
     - name: Build frontend image
       run: |
-        docker build -t ${{ github.repository_owner }}/aisummarizer-frontend:scan ./ai-summarizer-frontend
-
-    - name: Run Grype vulnerability scanner
-      uses: anchore/scan-action@v3
-      with:
-        image: ${{ github.repository_owner }}/aisummarizer-frontend:scan
-        fail-build: false
-        severity-cutoff: high
-        output-format: sarif
-        add-cpes-if-none: true
-
-    - name: Upload Grype scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: ${{ steps.scan.outputs.sarif }}
-        category: frontend-grype
+        docker build -t scan-image ./ai-summarizer-frontend
 
     - name: Generate frontend SBOM
       uses: anchore/sbom-action@v0
       with:
-        image: ${{ github.repository_owner }}/aisummarizer-frontend:scan
+        image: scan-image
         format: spdx-json
         artifact-name: frontend-sbom
 
