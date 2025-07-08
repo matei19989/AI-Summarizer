@@ -2,14 +2,16 @@ name: Build and Deploy Containers
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - 'AISummarizerAPI/**'
       - 'ai-summarizer-frontend/**'
       - '.github/workflows/docker-build.yml'
       - 'docker-compose*.yml'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - 'AISummarizerAPI/**'
       - 'ai-summarizer-frontend/**'
@@ -36,22 +38,21 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Check changed paths
-      uses: dorny/paths-filter@v3
-      id: filter
-      with:
-        filters: |
-          backend:
-            - 'AISummarizerAPI/**'
-            - '.github/workflows/docker-build.yml'
-          frontend:
-            - 'ai-summarizer-frontend/**'
-            - '.github/workflows/docker-build.yml'
+      - name: Check changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'AISummarizerAPI/**'
+              - '.github/workflows/docker-build.yml'
+            frontend:
+              - 'ai-summarizer-frontend/**'
+              - '.github/workflows/docker-build.yml'
 
   build-backend:
     needs: changed-files
@@ -60,192 +61,187 @@ jobs:
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       image-digest: ${{ steps.build.outputs.digest }}
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      with:
-        driver-opts: |
-          network=host
-          image=moby/buildkit:latest
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=moby/buildkit:latest
 
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix=${{ github.ref_name }}-
-          type=raw,value=latest,enable={{is_default_branch}}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=${{ github.ref_name }}-
+            type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Build and push backend
-      id: build
-      uses: docker/build-push-action@v5
-      with:
-        context: ./AISummarizerAPI
-        file: ./AISummarizerAPI/Dockerfile
-        platforms: linux/amd64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          BUILD_DATE=${{ github.event.repository.updated_at }}
-          VCS_REF=${{ github.sha }}
-        sbom: true
-        provenance: true
+      - name: Build and push backend
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./AISummarizerAPI
+          file: ./AISummarizerAPI/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VCS_REF=${{ github.sha }}
+          sbom: true
+          provenance: true
 
-    - name: Run Trivy vulnerability scanner
-      if: github.event_name != 'pull_request'
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest
-        format: 'sarif'
-        output: 'backend-trivy-results.sarif'
-        severity: 'CRITICAL,HIGH'
+      - name: Run Trivy vulnerability scanner
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest
+          format: 'sarif'
+          output: 'backend-trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
-    - name: Upload Trivy scan results
-      if: github.event_name != 'pull_request'
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'backend-trivy-results.sarif'
-        category: 'backend-container'
+      - name: Upload Trivy scan results
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'backend-trivy-results.sarif'
+          category: 'backend-container'
 
   build-frontend:
     needs: changed-files
     if: needs.changed-files.outputs.frontend == 'true' || github.event.inputs.force_deploy == 'true'
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix=${{ github.ref_name }}-
-          type=raw,value=latest,enable={{is_default_branch}}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=${{ github.ref_name }}-
+            type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Build and push frontend
-      uses: docker/build-push-action@v5
-      with:
-        context: ./ai-summarizer-frontend
-        file: ./ai-summarizer-frontend/Dockerfile
-        platforms: linux/amd64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        target: runtime
-        build-args: |
-          BUILD_DATE=${{ github.event.repository.updated_at }}
-          VCS_REF=${{ github.sha }}
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ai-summarizer-frontend
+          file: ./ai-summarizer-frontend/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          target: runtime
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VCS_REF=${{ github.sha }}
 
   integration-test:
     needs: [build-backend, build-frontend]
     if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Create test environment
-      run: |
-        echo "HUGGINGFACE_API_TOKEN=test-token" > .env.test
-        echo "NODE_ENV=test" >> .env.test
+      - name: Create test environment
+        run: |
+          echo "HUGGINGFACE_API_TOKEN=test-token" > .env.test
+          echo "NODE_ENV=test" >> .env.test
 
-    - name: Test Docker Compose setup
-      run: |
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+      - name: Generate .env.production for CI
+        run: |
+          echo "HUGGINGFACE_API_TOKEN=${{ secrets.HUGGINGFACE_API_TOKEN }}" > .env.production
+          echo "HuggingFace__ApiToken=${{ secrets.HUGGINGFACE_API_TOKEN }}" >> .env.production
+          echo "ASPNETCORE_ENVIRONMENT=Production" >> .env.production
+          echo "ASPNETCORE_DETAILEDERRORS=false" >> .env.production
+          echo "ASPNETCORE_URLS=http://+:80" >> .env.production
+          echo "NGINX_ENV=production" >> .env.production
+          echo "Logging__LogLevel__Default=Warning" >> .env.production
 
-    - name: Run integration tests
-      run: |
-        # Use latest built images for testing
-        export BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
-        export FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest"
-        
-        # Start services
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-        
-        # Wait for services
-        timeout 120s bash -c 'until curl -f http://localhost:80/health; do sleep 5; done'
-        timeout 120s bash -c 'until curl -f http://localhost:80/backend-health; do sleep 5; done'
-        
-        echo "✅ Integration tests passed"
-        
-        # Clean up
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+      - name: Test Docker Compose setup
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+
+      - name: Run integration tests
+        run: |
+          export BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
+          export FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest"
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          timeout 120s bash -c 'until curl -f http://localhost:80/health; do sleep 5; done'
+          timeout 120s bash -c 'until curl -f http://localhost:80/backend-health; do sleep 5; done'
+          echo "✅ Integration tests passed"
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
   deploy-to-azure:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [build-backend, integration-test]
     runs-on: ubuntu-latest
     environment: production
-    
     steps:
-    - name: Configure Azure Container App
-      run: |
-        echo "🚀 Deploying to Azure Web App for Containers"
-        echo "Backend Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
-        
-    - name: Trigger Azure deployment webhook
-      if: ${{ github.secrets.AZURE_WEBHOOK_URL != '' }}
-      run: |
-        curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "image": "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest",
-            "registry": "${{ env.REGISTRY }}",
-            "tag": "latest"
-          }'
-        
-        echo "✅ Azure webhook triggered successfully"
+      - name: Configure Azure Container App
+        run: |
+          echo "🚀 Deploying to Azure Web App for Containers"
+          echo "Backend Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
 
-    - name: Verify Azure deployment
-      run: |
-        echo "⏳ Waiting for Azure deployment..."
-        sleep 60
-        
-        for i in {1..10}; do
-          if curl -f https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net/api/summarization/health; then
-            echo "✅ Azure deployment verified!"
-            exit 0
-          fi
-          echo "Attempt $i failed, retrying in 30s..."
-          sleep 30
-        done
-        
-        echo "❌ Azure deployment verification failed"
-        exit 1
+      - name: Trigger Azure deployment webhook
+        if: ${{ github.secrets.AZURE_WEBHOOK_URL != '' }}
+        run: |
+          curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "image": "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest",
+              "registry": "${{ env.REGISTRY }}",
+              "tag": "latest"
+            }'
+          echo "✅ Azure webhook triggered successfully"
+
+      - name: Verify Azure deployment
+        run: |
+          echo "⏳ Waiting for Azure deployment..."
+          sleep 60
+          for i in {1..10}; do
+            if curl -f https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net/api/summarization/health; then
+              echo "✅ Azure deployment verified!"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 30s..."
+            sleep 30
+          done
+          echo "❌ Azure deployment verification failed"
+          exit 1
