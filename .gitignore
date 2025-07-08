@@ -77,7 +77,8 @@ dist-ssr/
 
 # Environment variables
 .env
-.env.*
+.env.development
+.env.production
 
 # ===================================================================
 # General Development Files
