@@ -75,7 +75,7 @@ jobs:
 
     - name: Upload coverage reports
       if: matrix.node-version == env.NODE_VERSION
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
         directory: ${{ env.WORKING_DIRECTORY }}/coverage
         flags: frontend
@@ -152,7 +152,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: ./ai-summarizer-frontend
         file: ./ai-summarizer-frontend/Dockerfile

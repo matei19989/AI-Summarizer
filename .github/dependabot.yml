@@ -9,7 +9,7 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "matei1998"  # Replace with your actual username
+      - "matei19989"  # Replace with your actual username
     labels:
       - "dependencies"
       - "frontend"
@@ -26,7 +26,7 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "matei1998"  # Replace with your actual username
+      - "matei19989"  # Replace with your actual username
     labels:
       - "dependencies"
       - "backend"

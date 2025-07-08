@@ -93,7 +93,7 @@ jobs:
 
       - name: Build and push backend
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./AISummarizerAPI
           file: ./AISummarizerAPI/Dockerfile
@@ -156,7 +156,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push frontend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./ai-summarizer-frontend
           file: ./ai-summarizer-frontend/Dockerfile
@@ -236,7 +236,7 @@ jobs:
           echo "⏳ Waiting for Azure deployment..."
           sleep 60
           for i in {1..10}; do
-            if curl -f https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net/api/summarization/health; then
+            if curl -f https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net/api/summarization/health; do
               echo "✅ Azure deployment verified!"
               exit 0
             fi
