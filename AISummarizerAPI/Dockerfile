@@ -60,6 +60,6 @@ ENV ASPNETCORE_URLS=http://+:80 \
 
 # Health check with proper dependencies
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:80/api/summarization/health || exit 1
+    CMD curl -f http://localhost:5088/api/summarization/health || exit 1
 
 ENTRYPOINT ["dotnet", "AISummarizerAPI.dll"]

@@ -118,7 +118,7 @@ builder.Services.AddCors(options =>
                     "http://localhost:3000",
                     "http://localhost:5173",
                     "http://localhost:4173",
-                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app")
+                    "https://ai-summarizer-theta-ten.vercel.app")
                 .AllowAnyMethod()
                 .AllowAnyHeader()
                 .AllowCredentials();
@@ -127,7 +127,7 @@ builder.Services.AddCors(options =>
         {
             corsBuilder
                 .WithOrigins(
-                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app",
+                    "https://ai-summarizer-theta-ten.vercel.app",
                     "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net")
                 .AllowAnyMethod()
                 .AllowAnyHeader()
