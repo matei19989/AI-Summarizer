@@ -1,399 +1,424 @@
-name: PR Quality Checks
+name: Security Scanning
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/package*.json'
+      - '**/*.csproj'
+      - '**/Dockerfile'
+      - '.github/workflows/security-scan.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/package*.json'
+      - '**/*.csproj'
+      - '**/Dockerfile'
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly scan on Mondays
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan to run'
+        type: choice
+        options:
+          - all
+          - dependencies
+          - containers
+          - secrets
+        default: all
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
-  pull-requests: write
+  security-events: write
   issues: write
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
-
-concurrency:
-  group: pr-checks-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  pull-requests: write
 
 jobs:
-  pr-validation:
+  dependency-scanning:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    outputs:
-      pr-size: ${{ steps.pr-analysis.outputs.pr-size }}
-      files-changed: ${{ steps.pr-analysis.outputs.files-changed }}
-      backend-changed: ${{ steps.changes.outputs.backend }}
-      frontend-changed: ${{ steps.changes.outputs.frontend }}
-    
+    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'dependencies' || github.event.inputs.scan_type == ''
+    strategy:
+      matrix:
+        component:
+          - name: backend
+            path: ./AISummarizerAPI
+            type: dotnet
+          - name: frontend
+            path: ./ai-summarizer-frontend
+            type: npm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET environment
+        if: matrix.component.type == 'dotnet'
+        uses: ./.github/actions/setup-dotnet
+        with:
+          working-directory: ${{ matrix.component.path }}
+
+      - name: Setup Node.js environment
+        if: matrix.component.type == 'npm'
+        uses: ./.github/actions/setup-node
+        with:
+          working-directory: ${{ matrix.component.path }}
+
+      - name: .NET Security Scan
+        if: matrix.component.type == 'dotnet'
+        working-directory: ${{ matrix.component.path }}
+        run: |
+          echo "🔍 Scanning .NET dependencies for vulnerabilities..."
+
+          # Check for vulnerable packages
+          echo "📋 Checking for vulnerable packages..."
+          dotnet list package --vulnerable --include-transitive > vulnerable-packages.txt 2>&1 || true
+
+          if grep -q "vulnerable" vulnerable-packages.txt; then
+            echo "⚠️ Vulnerable packages found:"
+            cat vulnerable-packages.txt
+            echo "vulnerable-packages=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No vulnerable packages found"
+            echo "vulnerable-packages=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check for outdated packages
+          echo "📋 Checking for outdated packages..."
+          if command -v dotnet-outdated >/dev/null 2>&1; then
+            dotnet-outdated -f -td 3 > outdated-packages.txt 2>&1 || true
+            if [ -s outdated-packages.txt ]; then
+              echo "ℹ️ Outdated packages found:"
+              cat outdated-packages.txt
+            fi
+          else
+            echo "ℹ️ dotnet-outdated not available, skipping outdated check"
+          fi
+
+      - name: NPM Security Scan
+        if: matrix.component.type == 'npm'
+        working-directory: ${{ matrix.component.path }}
+        run: |
+          echo "🔍 Scanning NPM dependencies for vulnerabilities..."
+
+          # Run npm audit
+          npm audit --json > npm-audit-report.json 2>&1 || true
+
+          if [ -f npm-audit-report.json ]; then
+            # Parse audit results
+            CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json)
+            HIGH=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json)
+            MODERATE=$(jq '.metadata.vulnerabilities.moderate // 0' npm-audit-report.json)
+            LOW=$(jq '.metadata.vulnerabilities.low // 0' npm-audit-report.json)
+
+            echo "📊 Vulnerability Summary:"
+            echo "- Critical: $CRITICAL"
+            echo "- High: $HIGH"
+            echo "- Moderate: $MODERATE"
+            echo "- Low: $LOW"
+
+            # Set outputs for further processing
+            echo "critical-vulns=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high-vulns=$HIGH" >> $GITHUB_OUTPUT
+
+            # Show details for high/critical vulnerabilities
+            if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+              echo "⚠️ High-severity vulnerabilities detected:"
+              npm audit --audit-level=high 2>&1 || true
+            else
+              echo "✅ No high-severity vulnerabilities found"
+            fi
+          else
+            echo "❌ Could not generate audit report"
+          fi
+
+      - name: Upload audit reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component.name }}-security-report
+          path: |
+            ${{ matrix.component.path }}/*audit*.json
+            ${{ matrix.component.path }}/*packages*.txt
+          retention-days: 30
+
+  secret-scanning:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'secrets' || github.event.inputs.scan_type == ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v45.0.8
-        with:
-          separator: ","
-
-      - name: Analyze PR size and complexity
-        id: pr-analysis
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Calculate BASE for TruffleHog
+        id: calculate_base
         run: |
-          # Get PR information using string manipulation
-          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
-          
-          if [ -n "$CHANGED_FILES" ]; then
-            FILES_CHANGED=$(echo "$CHANGED_FILES" | tr ',' '\n' | grep -c . || echo "0")
-          else
-            FILES_CHANGED=0
-          fi
-          
-          LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}' || echo "0")
-          LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}' || echo "0")
-          
-          echo "files-changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
-          echo "lines-added=$LINES_ADDED" >> $GITHUB_OUTPUT
-          echo "lines-deleted=$LINES_DELETED" >> $GITHUB_OUTPUT
-          
-          # Determine PR size
-          if [ $FILES_CHANGED -gt 50 ] || [ $LINES_ADDED -gt 1000 ]; then
-            PR_SIZE="large"
-          elif [ $FILES_CHANGED -gt 20 ] || [ $LINES_ADDED -gt 500 ]; then
-            PR_SIZE="medium"
-          else
-            PR_SIZE="small"
-          fi
-          
-          echo "pr-size=$PR_SIZE" >> $GITHUB_OUTPUT
-          
-          echo "📊 PR Analysis:"
-          echo "- Files changed: $FILES_CHANGED"
-          echo "- Lines added: $LINES_ADDED"
-          echo "- Lines deleted: $LINES_DELETED"
-          echo "- PR size: $PR_SIZE"
-
-      - name: Check for component changes
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            backend:
-              - 'AISummarizerAPI/**'
-            frontend:
-              - 'ai-summarizer-frontend/**'
-            workflows:
-              - '.github/workflows/**'
-            docker:
-              - '**/Dockerfile'
-              - 'docker-compose*.yml'
-            docs:
-              - '**/*.md'
-              - 'docs/**'
-
-      - name: Validate branch naming
-        env:
-          BRANCH_NAME: ${{ github.head_ref }}
-        run: |
-          VALID_PATTERN="^(feature|fix|hotfix|release|docs|chore|refactor|test)\/[a-z0-9-]+$"
-          
-          echo "🔍 Validating branch name: $BRANCH_NAME"
-          
-          if echo "$BRANCH_NAME" | grep -qE "$VALID_PATTERN"; then
-            echo "✅ Branch name follows naming convention"
-          else
-            echo "⚠️ Branch name '$BRANCH_NAME' doesn't follow convention: type/description"
-            echo "Valid prefixes: feature, fix, hotfix, release, docs, chore, refactor, test"
-          fi
-
-      - name: Check commit message format
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          echo "🔍 Checking commit message format..."
-          
-          # Get commits in this PR
-          COMMITS=$(git log --format="%s" $BASE_SHA..$HEAD_SHA)
-          
-          CONVENTIONAL_PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"
-          
-          while IFS= read -r commit; do
-            if [ -n "$commit" ]; then
-              if echo "$commit" | grep -qE "$CONVENTIONAL_PATTERN"; then
-                echo "✅ $commit"
-              else
-                echo "⚠️ $commit (doesn't follow conventional format)"
-              fi
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            if git rev-parse HEAD~1 &>/dev/null; then
+              echo "base_ref=$(git rev-parse HEAD~1)" >> $GITHUB_OUTPUT
+            else
+              echo "No previous commit found on this branch. Scanning full history."
+              echo "base_ref=" >> $GITHUB_OUTPUT
             fi
-          done <<< "$COMMITS"
-
-  file-quality-checks:
-    runs-on: ubuntu-latest
-    needs: pr-validation
-    if: needs.pr-validation.outputs.files-changed != '0'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check for large files
-        run: |
-          echo "🔍 Checking for large files (>10MB)..."
-          
-          LARGE_FILES=$(find . -type f -size +10M -not -path "./.git/*" -not -path "./node_modules/*" | head -10)
-          
-          if [ -n "$LARGE_FILES" ]; then
-            echo "⚠️ Large files detected:"
-            echo "$LARGE_FILES" | while read file; do
-              SIZE=$(du -h "$file" | cut -f1)
-              echo "- $file ($SIZE)"
-            done
-            echo "Consider using Git LFS for large files or reducing file size"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "base_ref=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
           else
-            echo "✅ No large files found"
+            echo "Running full history scan for event: ${{ github.event_name }}"
+            echo "base_ref=" >> $GITHUB_OUTPUT
           fi
+
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          base: ${{ steps.calculate_base.outputs.base_ref }}
+          head: ${{ github.sha }}
+          output: /tmp/trufflehog-results.json
+          extra_args: --only-verified --json
+          path: ./
+          version: latest
+
+      - name: Process TruffleHog results
+        run: |
+          echo "🔍 Processing secret scan results..."
+
+          if [ -f /tmp/trufflehog-results.json ] && [ -s /tmp/trufflehog-results.json ]; then
+            SECRET_COUNT=$(jq length /tmp/trufflehog-results.json)
+            echo "⚠️ Found $SECRET_COUNT potential secrets"
+
+            # Show first few results
+            jq -r '.[] | "File: \(.SourceMetadata.Data.Filesystem.file) | Secret: \(.DetectorName)"' /tmp/trufflehog-results.json | head -10
+          else
+            echo "✅ No secrets detected"
+          fi
+
+      - name: Gitleaks scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for sensitive file patterns
         run: |
-          echo "🔍 Checking for sensitive files..."
-          
+          echo "🔍 Checking for sensitive file patterns..."
+
           SENSITIVE_PATTERNS=(
             "*.pem" "*.key" "*.p12" "*.pfx" "*_rsa" "*_dsa"
             "*.der" "*.crt" "*.cer" ".env.*" "secrets.*"
             "*.keystore" "*.jks" "*.pkcs12"
           )
-          
-          FOUND_SENSITIVE=false
+
+          FOUND_FILES=""
           for pattern in "${SENSITIVE_PATTERNS[@]}"; do
-            if find . -name "$pattern" -not -path "./.git/*" -not -path "./node_modules/*" | grep -q .; then
-              echo "❌ Sensitive file pattern detected: $pattern"
-              find . -name "$pattern" -not -path "./.git/*" -not -path "./node_modules/*" | head -5
-              FOUND_SENSITIVE=true
+            FILES=$(find . -name "$pattern" -not -path "./.git/*" -not -path "./node_modules/*" | head -10)
+            if [ -n "$FILES" ]; then
+              FOUND_FILES="$FOUND_FILES\n$FILES"
             fi
           done
-          
-          if [ "$FOUND_SENSITIVE" = "false" ]; then
-            echo "✅ No sensitive files found"
+
+          if [ -n "$FOUND_FILES" ]; then
+            echo "⚠️ Sensitive file patterns detected:"
+            echo -e "$FOUND_FILES"
+          else
+            echo "✅ No sensitive file patterns found"
           fi
 
-      - name: Validate configuration files
+  container-scanning:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'containers' || github.event.inputs.scan_type == ''
+    strategy:
+      matrix:
+        component:
+          - name: backend
+            context: ./AISummarizerAPI
+            dockerfile: ./AISummarizerAPI/Dockerfile
+          - name: frontend
+            context: ./ai-summarizer-frontend
+            dockerfile: ./ai-summarizer-frontend/Dockerfile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image for scanning
         run: |
-          echo "🔍 Validating configuration files..."
-          
-          # Validate JSON files
-          JSON_ERRORS=0
-          find . -name "*.json" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
-            if ! python3 -m json.tool "$file" > /dev/null 2>&1; then
-              echo "❌ Invalid JSON: $file"
-              JSON_ERRORS=$((JSON_ERRORS + 1))
-            fi
-          done
-          
-          # Validate YAML files
-          YAML_ERRORS=0
-          find . -name "*.yml" -o -name "*.yaml" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
-            if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
-              echo "❌ Invalid YAML: $file"
-              YAML_ERRORS=$((YAML_ERRORS + 1))
-            fi
-          done
-          
-          if [ $JSON_ERRORS -eq 0 ] && [ $YAML_ERRORS -eq 0 ]; then
-            echo "✅ All configuration files are valid"
+          echo "🏗️ Building ${{ matrix.component.name }} image for security scanning..."
+          docker build -t ${{ matrix.component.name }}-security-scan:latest -f ${{ matrix.component.dockerfile }} ${{ matrix.component.context }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ matrix.component.name }}-security-scan:latest
+          format: 'sarif'
+          output: '${{ matrix.component.name }}-trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: '${{ matrix.component.name }}-trivy-results.sarif'
+          category: '${{ matrix.component.name }}-security-scan'
+
+      - name: Run Grype vulnerability scanner
+        uses: anchore/scan-action@v3
+        with:
+          image: ${{ matrix.component.name }}-security-scan:latest
+          fail-build: false
+          severity-cutoff: high
+          output-format: sarif
+          output-file: ${{ matrix.component.name }}-grype-results.sarif
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ matrix.component.name }}-security-scan:latest
+          format: spdx-json
+          artifact-name: ${{ matrix.component.name }}-sbom
+          output-file: ${{ matrix.component.name }}-sbom.spdx.json
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component.name }}-container-security
+          path: |
+            ${{ matrix.component.name }}-*.sarif
+            ${{ matrix.component.name }}-*.spdx.json
+          retention-days: 30
+
+  owasp-dependency-check:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'dependencies' || github.event.inputs.scan_type == ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'AI-Summarizer'
+          path: '.'
+          format: 'ALL'
+          args: >
+            --enableRetired
+            --enableExperimental
+            --disableYarnAudit
+            --disableNodeAudit
+            --exclude "**/node_modules/**"
+            --exclude "**/dist/**"
+            --exclude "**/build/**"
+
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-dependency-check-report
+          path: reports/
+          retention-days: 30
+
+  security-summary:
+    needs: [dependency-scanning, secret-scanning, container-scanning, owasp-dependency-check]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect security results
+        run: |
+          echo "🔒 Security Scanning Summary"
+          echo "=========================="
+
+          # Dependency scanning results
+          echo "📦 Dependency Scanning: ${{ needs.dependency-scanning.result }}"
+
+          # Secret scanning results
+          echo "🔐 Secret Scanning: ${{ needs.secret-scanning.result }}"
+
+          # Container scanning results
+          echo "🐳 Container Scanning: ${{ needs.container-scanning.result }}"
+
+          # OWASP dependency check results
+          echo "🛡️ OWASP Dependency Check: ${{ needs.owasp-dependency-check.result }}"
+
+          # Overall security status
+          if [ "${{ needs.dependency-scanning.result }}" = "success" ] && \
+             [ "${{ needs.secret-scanning.result }}" = "success" ] && \
+             [ "${{ needs.container-scanning.result }}" = "success" ] && \
+             [ "${{ needs.owasp-dependency-check.result }}" = "success" ]; then
+            echo "✅ Overall Security Status: PASSED"
+          else
+            echo "❌ Overall Security Status: ATTENTION REQUIRED"
           fi
 
-  dependency-review:
+      - name: Create security summary
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Notes |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Scanning | ${{ needs.dependency-scanning.result }} | Checked for vulnerable packages |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scanning | ${{ needs.secret-scanning.result }} | Searched for exposed secrets |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container Scanning | ${{ needs.container-scanning.result }} | Scanned Docker images |" >> $GITHUB_STEP_SUMMARY
+          echo "| OWASP Dependency Check | ${{ needs.owasp-dependency-check.result }} | Comprehensive dependency analysis |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Actions Taken" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 Scanned all dependencies for known vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔐 Checked for exposed secrets and sensitive files" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Analyzed Docker images for security issues" >> $GITHUB_STEP_SUMMARY
+          echo "- 📊 Generated SBOMs for supply chain transparency" >> $GITHUB_STEP_SUMMARY
+          echo "- 📋 Uploaded results to GitHub Security tab" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  create-security-issue:
+    needs: [dependency-scanning, secret-scanning, container-scanning, owasp-dependency-check]
+    if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    needs: pr-validation
-    if: needs.pr-validation.outputs.backend-changed == 'true' || needs.pr-validation.outputs.frontend-changed == 'true'
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-          deny-licenses: GPL-3.0
-          comment-summary-in-pr: true
-
-  pr-labeler:
-    runs-on: ubuntu-latest
-    needs: pr-validation
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Label PR based on changes
-        uses: actions/labeler@v5
-        with:
-          repo-token: "${{ secrets.GITHUB_TOKEN }}"
-          configuration-path: .github/labeler.yml
-
-      - name: Add size label
+      - name: Create security issue
         uses: actions/github-script@v7
         with:
           script: |
-            const prSize = "${{ needs.pr-validation.outputs.pr-size }}";
-            const sizeLabel = `size/${prSize}`;
-            
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: [sizeLabel]
-            });
-            
-            console.log(`Added label: ${sizeLabel}`);
+            const date = new Date().toISOString().split('T')[0];
+            const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
 
-  pr-comments:
-    runs-on: ubuntu-latest
-    needs: [pr-validation, file-quality-checks, dependency-review]
-    if: always()
-    
-    steps:
-      - name: Welcome first-time contributor
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = context.issue.number;
-            const prAuthor = context.payload.pull_request.user.login;
-            
-            // Check if this is the first PR from this user
-            const { data: prs } = await github.rest.pulls.list({
+            const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'all',
-              creator: prAuthor,
-              per_page: 2
+              title: `🔒 Security Scan Alert - ${date}`,
+              body: `## Security Scan Results
+
+                        The automated security scan has found issues that need attention.
+
+                        ### Scan Results
+            - **Dependency Scanning**: ${{ needs.dependency-scanning.result }}
+            - **Secret Scanning**: ${{ needs.secret-scanning.result }}
+            - **Container Scanning**: ${{ needs.container-scanning.result }}
+            - **OWASP Dependency Check**: ${{ needs.owasp-dependency-check.result }}
+
+                        ### Details
+            - **Workflow Run**: [#${{ github.run_number }}](${runUrl})
+            - **Branch**: ${{ github.ref }}
+            - **Commit**: ${{ github.sha }}
+            - **Scan Date**: ${date}
+
+                        ### Next Steps
+            1. Review the workflow logs and artifacts for detailed information
+            2. Check the GitHub Security tab for vulnerability details
+            3. Update dependencies and fix security issues
+            4. Re-run the security scan to verify fixes
+
+                        ### Artifacts
+            Security scan artifacts are available in the workflow run for 30 days.
+
+                        ---
+            *This issue was created automatically by the security scanning workflow.*`,
+              labels: ['security', 'automated', 'high-priority']
             });
-            
-            if (prs.length === 1) {
-              await github.rest.issues.createComment({
+
+            console.log(`Created security issue #${issue.data.number}`);
+
+            // Add assignees if configured
+            if (process.env.SECURITY_TEAM) {
+              await github.rest.issues.addAssignees({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: prNumber,
-                body: `## Welcome @${prAuthor}! 🎉
-                
-                Thank you for your first contribution to this project! 
-                
-                ### What happens next?
-                - 🔍 Automated checks are running and will provide feedback
-                - 👥 A maintainer will review your changes
-                - 💬 Feel free to ask questions in the comments
-                
-                ### Helpful resources
-                - [Contributing Guidelines](CONTRIBUTING.md)
-                - [Code of Conduct](CODE_OF_CONDUCT.md)
-                - [Development Setup](README.md#development)
-                
-                We appreciate your contribution! 🚀`
+                issue_number: issue.data.number,
+                assignees: process.env.SECURITY_TEAM.split(',')
               });
             }
-
-      - name: Add PR size warning
-        if: needs.pr-validation.outputs.pr-size == 'large'
-        env:
-          FILES_CHANGED: ${{ needs.pr-validation.outputs.files-changed }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const filesChanged = process.env.FILES_CHANGED;
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## 📏 Large PR Detected
-              
-              This PR changes **${filesChanged}** files, which is quite large.
-              
-              ### Recommendations:
-              - Consider splitting into smaller, focused PRs
-              - Ensure comprehensive testing of all changes
-              - Add detailed descriptions for complex changes
-              - Review carefully for potential breaking changes
-              
-              Large PRs are harder to review and more likely to introduce bugs.`
-            });
-
-      - name: Add quality check results
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const results = {
-              'PR Validation': '${{ needs.pr-validation.result }}',
-              'File Quality': '${{ needs.file-quality-checks.result }}',
-              'Dependency Review': '${{ needs.dependency-review.result }}'
-            };
-            
-            let comment = `## 🔍 Quality Check Results\n\n`;
-            comment += `| Check | Status |\n`;
-            comment += `|-------|--------|\n`;
-            
-            for (const [check, status] of Object.entries(results)) {
-              const emoji = status === 'success' ? '✅' : 
-                           status === 'failure' ? '❌' : 
-                           status === 'skipped' ? '⏭️' : '⚠️';
-              comment += `| ${check} | ${emoji} ${status} |\n`;
-            }
-            
-            comment += `\n### Details\n`;
-            comment += `- **Files changed**: ${{ needs.pr-validation.outputs.files-changed }}\n`;
-            comment += `- **PR size**: ${{ needs.pr-validation.outputs.pr-size }}\n`;
-            comment += `- **Backend changes**: ${{ needs.pr-validation.outputs.backend-changed }}\n`;
-            comment += `- **Frontend changes**: ${{ needs.pr-validation.outputs.frontend-changed }}\n`;
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: comment
-            });
-
-  pr-summary:
-    runs-on: ubuntu-latest
-    needs: [pr-validation, file-quality-checks, dependency-review, pr-labeler, pr-comments]
-    if: always()
-    
-    steps:
-      - name: PR Quality Summary
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          echo "## 🔍 PR Quality Check Summary" >> $GITHUB_STEP_SUMMARY
-          echo "### Results" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Validation | ${{ needs.pr-validation.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| File Quality | ${{ needs.file-quality-checks.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dependency Review | ${{ needs.dependency-review.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Labeler | ${{ needs.pr-labeler.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Comments | ${{ needs.pr-comments.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### PR Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **PR Number**: #$PR_NUMBER" >> $GITHUB_STEP_SUMMARY
-          echo "- **Files Changed**: ${{ needs.pr-validation.outputs.files-changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **PR Size**: ${{ needs.pr-validation.outputs.pr-size }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Backend Changes**: ${{ needs.pr-validation.outputs.backend-changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Frontend Changes**: ${{ needs.pr-validation.outputs.frontend-changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Author**: @$PR_AUTHOR" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: $HEAD_REF" >> $GITHUB_STEP_SUMMARY
-          
-          # Overall status
-          if [ "${{ needs.pr-validation.result }}" = "success" ] && \
-             [ "${{ needs.file-quality-checks.result }}" = "success" ] && \
-             [ "${{ needs.dependency-review.result }}" = "success" ]; then
-            echo "- **Overall Status**: ✅ **READY FOR REVIEW**" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Overall Status**: ⚠️ **NEEDS ATTENTION**" >> $GITHUB_STEP_SUMMARY
-          fi
