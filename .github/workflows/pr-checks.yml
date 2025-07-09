@@ -69,6 +69,23 @@ jobs:
           echo "- Lines added: $LINES_ADDED"
           echo "- Lines deleted: $LINES_DELETED"
           echo "- PR size: $PR_SIZE"
+          
+          # Determine PR size
+          if [ $FILES_CHANGED -gt 50 ] || [ $LINES_ADDED -gt 1000 ]; then
+            PR_SIZE="large"
+          elif [ $FILES_CHANGED -gt 20 ] || [ $LINES_ADDED -gt 500 ]; then
+            PR_SIZE="medium"
+          else
+            PR_SIZE="small"
+          fi
+          
+          echo "pr-size=$PR_SIZE" >> $GITHUB_OUTPUT
+          
+          echo "📊 PR Analysis:"
+          echo "- Files changed: $FILES_CHANGED"
+          echo "- Lines added: $LINES_ADDED"
+          echo "- Lines deleted: $LINES_DELETED"
+          echo "- PR size: $PR_SIZE"
 
       - name: Check for component changes
         id: changes
@@ -390,4 +407,3 @@ jobs:
             echo "- **Overall Status**: ✅ **READY FOR REVIEW**" >> $GITHUB_STEP_SUMMARY
           else
             echo "- **Overall Status**: ⚠️ **NEEDS ATTENTION**" >> $GITHUB_STEP_SUMMARY
-          fi
