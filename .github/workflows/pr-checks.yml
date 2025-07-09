@@ -36,7 +36,6 @@ jobs:
         uses: tj-actions/changed-files@v45.0.8
         with:
           separator: ","
-          json: true
 
       - name: Analyze PR size and complexity
         id: pr-analysis
@@ -44,10 +43,17 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Get PR information
-          FILES_CHANGED=$(echo '${{ steps.changed-files.outputs.all_changed_files }}' | jq length)
-          LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}')
-          LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}')
+          # Get PR information using string manipulation
+          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+          
+          if [ -n "$CHANGED_FILES" ]; then
+            FILES_CHANGED=$(echo "$CHANGED_FILES" | tr ',' '\n' | grep -c . || echo "0")
+          else
+            FILES_CHANGED=0
+          fi
+          
+          LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}' || echo "0")
+          LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}' || echo "0")
           
           echo "files-changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
           echo "lines-added=$LINES_ADDED" >> $GITHUB_OUTPUT
