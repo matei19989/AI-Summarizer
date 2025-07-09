@@ -296,7 +296,7 @@ jobs:
           # For now, we'll use a webhook approach if available
           
       - name: Trigger Azure deployment webhook
-        if: ${{ secrets.AZURE_WEBHOOK_URL != '' }}
+        if: ${{ env.AZURE_WEBHOOK_URL != '' }}
         run: |
           curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
@@ -309,7 +309,7 @@ jobs:
           echo "✅ Azure webhook triggered successfully"
 
       - name: Verify Azure deployment
-        if: ${{ secrets.AZURE_WEBHOOK_URL != '' }}
+        if: ${{ env.AZURE_WEBHOOK_URL != '' }}
         run: |
           echo "⏳ Waiting for Azure deployment to complete..."
           sleep 90
