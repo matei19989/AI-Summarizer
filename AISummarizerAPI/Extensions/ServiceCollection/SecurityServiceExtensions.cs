@@ -72,38 +72,37 @@ public static class SecurityServiceExtensions
     /// Only allows specific, known origins
     /// </summary>
     private static void ConfigureProductionCors(CorsPolicyBuilder corsBuilder, IConfiguration configuration)
+{
+    // Get allowed origins from environment configuration
+    var allowedOrigins = configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
+
+    if (!string.IsNullOrEmpty(allowedOrigins))
     {
-        // Get allowed origins from environment configuration
-        var allowedOrigins = configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
+        var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(o => o.Trim())
+                                    .ToArray();
 
-        if (!string.IsNullOrEmpty(allowedOrigins))
-        {
-            var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                       .Select(o => o.Trim())
-                                       .ToArray();
-
-            corsBuilder
-                .WithOrigins(origins)
-                .AllowAnyMethod()
-                .AllowAnyHeader()
-                .AllowCredentials();
-        }
-        else
-        {
-            // Fallback to known production origins
-            corsBuilder
-                .WithOrigins(
-                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app",  // Current Vercel URL
-                    "https://ai-summarizer-theta-ten.vercel.app",                       // Old Vercel URL (backup)
-                    "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net",  // Azure URL
-                    "https://ai-summarizer-ge8m4p474-matei19989s-projects.vercel.app",  // ✅ add this
-                    "https://ai-summarizer-k313u6jh6-matei19989s-projects.vercel.app",
-                    "https://ai-summarizer-gf02p3v4t-matei19989s-projects.vercel.app",
-                    "https://ai-summarizer-9nzfim99y-matei19989s-projects.vercel.app"
-                )
-                .AllowAnyMethod()
-                .AllowAnyHeader()
-                .WithExposedHeaders("Content-Length", "Content-Type");
-        }
+        corsBuilder
+            .WithOrigins(origins)
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
     }
+    else
+    {
+        // Dynamically allow all Vercel preview URLs for your account
+        corsBuilder
+            .SetIsOriginAllowed(origin =>
+                origin != null &&
+                (origin.Contains("matei19989s-projects.vercel.app") ||
+                 origin.Contains("ai-summarizer-theta-ten.vercel.app") ||  // production fallback
+                 origin.Contains("aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net")) // Azure backend
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .WithExposedHeaders("Content-Length", "Content-Type")
+            .AllowCredentials();
+    }
+}
+
 }
