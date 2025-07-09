@@ -26,14 +26,17 @@ on:
           - containers
           - secrets
         default: all
+
 concurrency:
   group: security-scan-${{ github.ref }}
   cancel-in-progress: true
+
 permissions:
   contents: read
   security-events: write
   issues: write
   pull-requests: write
+
 jobs:
   dependency-scanning:
     runs-on: ubuntu-latest
@@ -134,6 +137,7 @@ jobs:
             ${{ matrix.component.path }}/*audit*.json
             ${{ matrix.component.path }}/*packages*.txt
           retention-days: 30
+
   secret-scanning:
     runs-on: ubuntu-latest
     if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'secrets' || github.event.inputs.scan_type == ''
@@ -160,86 +164,19 @@ jobs:
           fi
 
       - name: TruffleHog secret scan
-        # The trufflesecurity/trufflehog action itself handles passing the arguments to the Docker run command.
-        # We need to adjust the `extra_args` to match the current TruffleHog CLI.
         uses: trufflesecurity/trufflehog@main
         with:
           base: ${{ steps.calculate_base.outputs.base_ref }}
           head: ${{ github.sha }}
-          # Removed --output flag. TruffleHog now prints JSON to stdout with --json.
-          # The action should capture this output. If not, we might need a custom run step.
+          output: /tmp/trufflehog-results.json
           extra_args: --only-verified --json
-          # The path and version parameters are still valid for the action itself.
           path: ./
           version: latest
-      - name: Process TruffleHog results
-        # This step now needs to read the output directly from the TruffleHog action.
-        # The trufflesecurity/trufflehog action automatically outputs `secrets-json`.
-        run: |
-          echo "🔍 Processing secret scan results..."
-
-          # Access the JSON output directly from the TruffleHog action's output.
-          # The action saves the JSON output to a temporary file and makes its path available.
-          # Referencing the action's documentation, it typically provides `secrets-json` as an output.
-          # Let's assume the action writes to a standard path if not directly provided via 'outputs' from the action.
-          # If the action's output path isn't directly available, we'll need to confirm the default.
-          # Based on the error and the action's nature, it's highly likely the JSON output is now part of the action's
-          # standard output or exposed as a specific action output.
-
-          # Let's try to capture the output directly from the TruffleHog step if it's available.
-          # If the action doesn't output the file directly, it's likely just printing to stdout,
-          # which means we'd need to modify the TruffleHog step to pipe its output to a file.
-          # However, the action is *designed* to handle this.
-          # Re-reading the `trufflesecurity/trufflehog` action's documentation (which I'd do in a real scenario):
-          # It seems the action implicitly manages the output file when `--json` is used.
-          # It stores the results in `github.action_path/results.json` or similar, then cleans up.
-          # The action actually has an `output_path` parameter, which you *were* using.
-          # The error `unknown long flag '--output'` is from the TruffleHog *CLI*, not the action.
-          # This means the action is passing `--output` to the underlying `trufflehog` command.
-
-          # Re-evaluating: The `trufflesecurity/trufflehog@main` action *should* handle the `--output`
-          # argument correctly, abstracting away the CLI changes. If it's failing on `--output`,
-          # it suggests that either:
-          # 1. The `trufflesecurity/trufflehog@main` action itself is outdated relative to the `latest` TruffleHog CLI,
-          #    or
-          # 2. There's a misunderstanding of how `extra_args` interacts with the action's internal logic.
-
-          # Given the error `trufflehog: error: unknown long flag '--output'`, it implies the flag
-          # is being passed directly to the TruffleHog binary, and that binary has removed it.
-          # The `trufflesecurity/trufflehog` action *does* have an `output` parameter to specify the path.
-          # This implies the `extra_args` is causing the conflict.
-
-          # The correct approach is to use the action's `output` parameter, not `extra_args` for this.
-
-          # ***CORRECTION TO THE FIX:***
-          # The `trufflesecurity/trufflehog` action has its own `output` parameter to specify the report file path.
-          # The `extra_args` are for arguments *not* directly exposed by the action.
-          # The conflict arises because you are telling the action to use `--output=/tmp/trufflehog-results.json`
-          # via `extra_args`, but the underlying TruffleHog binary no longer accepts `--output`.
-          # The action's parameter for the output file is simply `output`.
-
-          # Let's revert `extra_args` and use the dedicated `output` parameter of the action.
-
-      # NEW TRUFFLEHOG ACTION CONFIGURATION
-      - name: TruffleHog secret scan
-        uses: trufflesecurity/trufflehog@main
-        with:
-          base: ${{ steps.calculate_base.outputs.base_ref }}
-          head: ${{ github.sha }}
-          # Use the action's dedicated 'output' parameter for the results file
-          output: /tmp/trufflehog-results.json
-          # Keep --only-verified and --json as extra_args if they are not exposed
-          # as direct parameters by the action AND are still valid CLI flags.
-          # TruffleHog CLI still uses --json. --only-verified is also standard.
-          extra_args: --only-verified --json
-          path: ./
-          version: latest # Ensure we use the latest TruffleHog binary
 
       - name: Process TruffleHog results
         run: |
           echo "🔍 Processing secret scan results..."
 
-          # Now, the file should correctly be at /tmp/trufflehog-results.json
           if [ -f /tmp/trufflehog-results.json ] && [ -s /tmp/trufflehog-results.json ]; then
             SECRET_COUNT=$(jq length /tmp/trufflehog-results.json)
             echo "⚠️ Found $SECRET_COUNT potential secrets"
@@ -277,6 +214,7 @@ jobs:
           else
             echo "✅ No sensitive file patterns found"
           fi
+
   container-scanning:
     runs-on: ubuntu-latest
     if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'containers' || github.event.inputs.scan_type == ''
@@ -331,6 +269,7 @@ jobs:
             ${{ matrix.component.name }}-*.sarif
             ${{ matrix.component.name }}-*.spdx.json
           retention-days: 30
+
   owasp-dependency-check:
     runs-on: ubuntu-latest
     if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'dependencies' || github.event.inputs.scan_type == ''
@@ -357,6 +296,7 @@ jobs:
           name: owasp-dependency-check-report
           path: reports/
           retention-days: 30
+
   security-summary:
     needs: [dependency-scanning, secret-scanning, container-scanning, owasp-dependency-check]
     if: always()
@@ -407,6 +347,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Scan Date**: $(date)" >> $GITHUB_STEP_SUMMARY
           echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
   create-security-issue:
     needs: [dependency-scanning, secret-scanning, container-scanning, owasp-dependency-check]
     if: failure() && github.event_name == 'schedule'

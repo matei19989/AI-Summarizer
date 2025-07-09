@@ -72,37 +72,36 @@ public static class SecurityServiceExtensions
     /// Only allows specific, known origins
     /// </summary>
     private static void ConfigureProductionCors(CorsPolicyBuilder corsBuilder, IConfiguration configuration)
-{
-    // Get allowed origins from environment configuration
-    var allowedOrigins = configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
-
-    if (!string.IsNullOrEmpty(allowedOrigins))
     {
-        var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                    .Select(o => o.Trim())
-                                    .ToArray();
+        // Get allowed origins from environment configuration
+        var allowedOrigins = configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
 
-        corsBuilder
-            .WithOrigins(origins)
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
-    }
-    else
-    {
-        // Dynamically allow all Vercel preview URLs for your account
-        corsBuilder
-            .SetIsOriginAllowed(origin =>
-                origin != null &&
-                (origin.Contains("matei19989s-projects.vercel.app") ||
-                 origin.Contains("ai-summarizer-theta-ten.vercel.app") ||  // production fallback
-                 origin.Contains("aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net")) // Azure backend
-            )
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .WithExposedHeaders("Content-Length", "Content-Type")
-            .AllowCredentials();
-    }
-}
+        if (!string.IsNullOrEmpty(allowedOrigins))
+        {
+            var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(o => o.Trim())
+                                        .ToArray();
 
+            corsBuilder
+                .WithOrigins(origins)
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        }
+        else
+        {
+            // Allow all Vercel deployments for this project
+            corsBuilder
+                .SetIsOriginAllowed(origin =>
+                    origin != null &&
+                    (origin.EndsWith("matei19989s-projects.vercel.app") ||  // All preview URLs
+                     origin.EndsWith("ai-summarizer-theta-ten.vercel.app") ||  // Production domain
+                     origin.Contains("aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net")) // Azure backend
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .WithExposedHeaders("Content-Length", "Content-Type")
+                .AllowCredentials();
+        }
+    }
 }
