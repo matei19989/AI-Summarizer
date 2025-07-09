@@ -97,7 +97,8 @@ public static class SecurityServiceExtensions
                     "https://ai-summarizer-theta-ten.vercel.app",                       // Old Vercel URL (backup)
                     "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net",  // Azure URL
                     "https://ai-summarizer-ge8m4p474-matei19989s-projects.vercel.app",  // ✅ add this
-                    "https://ai-summarizer-k313u6jh6-matei19989s-projects.vercel.app"
+                    "https://ai-summarizer-k313u6jh6-matei19989s-projects.vercel.app",
+                    "https://ai-summarizer-gf02p3v4t-matei19989s-projects.vercel.app"
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
