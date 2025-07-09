@@ -45,7 +45,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Get PR information
-          FILES_CHANGED=$(echo '${{ steps.changed-files.outputs.all_changed_files }}' | jq length)
+          FILES_CHANGED=$(echo ${{ steps.changed-files.outputs.all_changed_files }} | jq length)
           LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}')
           LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}')
           
