@@ -44,8 +44,8 @@ public static class HttpPolicyExtensions
     /// <param name="durationOfBreak">How long to keep circuit open (default: 30s)</param>
     /// <returns>Configured circuit breaker policy</returns>
     public static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy(
-        string policyName, 
-        int handledEventsAllowedBeforeBreaking = 5, 
+        string policyName,
+        int handledEventsAllowedBeforeBreaking = 5,
         TimeSpan? durationOfBreak = null)
     {
         var breakDuration = durationOfBreak ?? TimeSpan.FromSeconds(30);
@@ -107,7 +107,7 @@ public static class HttpPolicyExtensions
         {
             return $"{outcome.Exception.GetType().Name}: {outcome.Exception.Message}";
         }
-        
+
         if (outcome.Result != null)
         {
             return $"HTTP {(int)outcome.Result.StatusCode} {outcome.Result.StatusCode}";

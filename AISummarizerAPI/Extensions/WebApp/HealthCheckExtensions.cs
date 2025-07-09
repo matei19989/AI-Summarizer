@@ -20,7 +20,7 @@ public static class HealthCheckExtensions
     {
         // Map health check endpoints
         app.MapHealthChecks("/health");
-        
+
         return app;
     }
 
@@ -37,10 +37,10 @@ public static class HealthCheckExtensions
         {
             // Validate configuration
             scope.ServiceProvider.ValidateConfiguration();
-            
+
             // Test critical dependencies
             await ValidateDependenciesAsync(scope.ServiceProvider, logger);
-            
+
             logger.LogInformation("✅ Startup validation completed successfully");
         }
         catch (Exception ex)

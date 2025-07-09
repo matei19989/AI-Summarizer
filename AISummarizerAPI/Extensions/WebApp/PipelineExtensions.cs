@@ -37,7 +37,7 @@ public static class PipelineExtensions
     {
         app.UseDeveloperExceptionPage();
         app.MapOpenApi();
-        
+
         var logger = app.Services.GetRequiredService<ILogger<Program>>();
         logger.LogInformation("🛠️ Development pipeline configured with OpenAPI");
 
@@ -52,11 +52,11 @@ public static class PipelineExtensions
     {
         app.UseExceptionHandler("/Error");
         app.UseHsts();
-        
+
         // Future: Add production middleware
         // app.UseResponseCompression();
         // app.UseResponseCaching();
-        
+
         var logger = app.Services.GetRequiredService<ILogger<Program>>();
         logger.LogInformation("🔒 Production pipeline configured with security headers");
 
@@ -71,14 +71,14 @@ public static class PipelineExtensions
     {
         // Security headers and CORS
         app.UseCors("ContainerPolicy");
-        
+
         // HTTPS redirection
         app.UseHttpsRedirection();
-        
+
         // Authentication and authorization (when implemented)
         // app.UseAuthentication();
         // app.UseAuthorization();
-        
+
         // Controller routing
         app.MapControllers();
 

@@ -15,11 +15,11 @@ public static class SecurityServiceExtensions
     public static IServiceCollection AddSecurityServices(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
         services.AddCorsConfiguration(configuration, environment);
-        
+
         // Future: Add authentication, authorization, rate limiting, etc.
         // services.AddAuthentication();
         // services.AddRateLimiting();
-        
+
         return services;
     }
 
@@ -75,7 +75,7 @@ public static class SecurityServiceExtensions
     {
         // Get allowed origins from environment configuration
         var allowedOrigins = configuration.GetSection("ASPNETCORE_ALLOWEDORIGINS").Get<string>();
-        
+
         if (!string.IsNullOrEmpty(allowedOrigins))
         {
             var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
