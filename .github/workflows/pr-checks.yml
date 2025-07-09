@@ -40,11 +40,14 @@ jobs:
 
       - name: Analyze PR size and complexity
         id: pr-analysis
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Get PR information
           FILES_CHANGED=$(echo '${{ steps.changed-files.outputs.all_changed_files }}' | jq length)
-          LINES_ADDED=$(git diff --numstat ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | awk '{sum += $1} END {print sum}')
-          LINES_DELETED=$(git diff --numstat ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | awk '{sum += $2} END {print sum}')
+          LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}')
+          LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}')
           
           echo "files-changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
           echo "lines-added=$LINES_ADDED" >> $GITHUB_OUTPUT
@@ -86,8 +89,9 @@ jobs:
               - 'docs/**'
 
       - name: Validate branch naming
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
         run: |
-          BRANCH_NAME="${{ github.head_ref }}"
           VALID_PATTERN="^(feature|fix|hotfix|release|docs|chore|refactor|test)\/[a-z0-9-]+$"
           
           echo "🔍 Validating branch name: $BRANCH_NAME"
@@ -100,11 +104,14 @@ jobs:
           fi
 
       - name: Check commit message format
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           echo "🔍 Checking commit message format..."
           
           # Get commits in this PR
-          COMMITS=$(git log --format="%s" ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          COMMITS=$(git log --format="%s" $BASE_SHA..$HEAD_SHA)
           
           CONVENTIONAL_PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"
           
@@ -286,16 +293,20 @@ jobs:
 
       - name: Add PR size warning
         if: needs.pr-validation.outputs.pr-size == 'large'
+        env:
+          FILES_CHANGED: ${{ needs.pr-validation.outputs.files-changed }}
         uses: actions/github-script@v7
         with:
           script: |
+            const filesChanged = process.env.FILES_CHANGED;
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: `## 📏 Large PR Detected
               
-              This PR changes **${{ needs.pr-validation.outputs.files-changed }}** files, which is quite large.
+              This PR changes **${filesChanged}** files, which is quite large.
               
               ### Recommendations:
               - Consider splitting into smaller, focused PRs
@@ -348,6 +359,10 @@ jobs:
     
     steps:
       - name: PR Quality Summary
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           echo "## 🔍 PR Quality Check Summary" >> $GITHUB_STEP_SUMMARY
           echo "### Results" >> $GITHUB_STEP_SUMMARY
@@ -360,13 +375,13 @@ jobs:
           echo "| PR Comments | ${{ needs.pr-comments.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### PR Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **PR Number**: #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Number**: #$PR_NUMBER" >> $GITHUB_STEP_SUMMARY
           echo "- **Files Changed**: ${{ needs.pr-validation.outputs.files-changed }}" >> $GITHUB_STEP_SUMMARY
           echo "- **PR Size**: ${{ needs.pr-validation.outputs.pr-size }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Backend Changes**: ${{ needs.pr-validation.outputs.backend-changed }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend Changes**: ${{ needs.pr-validation.outputs.frontend-changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Author**: @${{ github.event.pull_request.user.login }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: ${{ github.head_ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author**: @$PR_AUTHOR" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: $HEAD_REF" >> $GITHUB_STEP_SUMMARY
           
           # Overall status
           if [ "${{ needs.pr-validation.result }}" = "success" ] && \

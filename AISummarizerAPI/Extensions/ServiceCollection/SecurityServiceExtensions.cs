@@ -79,8 +79,8 @@ public static class SecurityServiceExtensions
         if (!string.IsNullOrEmpty(allowedOrigins))
         {
             var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                       .Select(o => o.Trim())
-                                       .ToArray();
+                                        .Select(o => o.Trim())
+                                        .ToArray();
 
             corsBuilder
                 .WithOrigins(origins)
@@ -90,16 +90,18 @@ public static class SecurityServiceExtensions
         }
         else
         {
-            // Fallback to known production origins
+            // Allow all Vercel deployments for this project
             corsBuilder
-                .WithOrigins(
-                    "https://ai-summarizer-au3d83i5e-matei19989s-projects.vercel.app",  // Current Vercel URL
-                    "https://ai-summarizer-theta-ten.vercel.app",                       // Old Vercel URL (backup)
-                    "https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net"  // Azure URL
+                .SetIsOriginAllowed(origin =>
+                    origin != null &&
+                    (origin.EndsWith("matei19989s-projects.vercel.app") ||  // All preview URLs
+                     origin.EndsWith("ai-summarizer-theta-ten.vercel.app") ||  // Production domain
+                     origin.Contains("aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net")) // Azure backend
                 )
                 .AllowAnyMethod()
                 .AllowAnyHeader()
-                .WithExposedHeaders("Content-Length", "Content-Type");
+                .WithExposedHeaders("Content-Length", "Content-Type")
+                .AllowCredentials();
         }
     }
 }
