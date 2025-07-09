@@ -93,7 +93,7 @@ jobs:
 
       - name: Build and push backend
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./AISummarizerAPI
           file: ./AISummarizerAPI/Dockerfile
@@ -103,6 +103,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          target: runtime
           build-args: |
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VCS_REF=${{ github.sha }}
@@ -129,6 +130,9 @@ jobs:
     needs: changed-files
     if: needs.changed-files.outputs.frontend == 'true' || github.event.inputs.force_deploy == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -156,7 +160,8 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push frontend
-        uses: docker/build-push-action@v5
+        id: build
+        uses: docker/build-push-action@v6
         with:
           context: ./ai-summarizer-frontend
           file: ./ai-summarizer-frontend/Dockerfile
@@ -170,6 +175,22 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VCS_REF=${{ github.sha }}
+
+      - name: Run Trivy vulnerability scanner
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest
+          format: 'sarif'
+          output: 'frontend-trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'frontend-trivy-results.sarif'
+          category: 'frontend-container'
 
   integration-test:
     needs: [build-backend, build-frontend]
@@ -203,45 +224,116 @@ jobs:
           export BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
           export FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest"
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          
+          echo "⏳ Waiting for services to start..."
           timeout 120s bash -c 'until curl -f http://localhost:80/health; do sleep 5; done'
-          timeout 120s bash -c 'until curl -f http://localhost:80/backend-health; do sleep 5; done'
+          
+          echo "⏳ Testing backend health..."
+          timeout 120s bash -c 'until curl -f http://localhost:80/api/summarization/health; do sleep 5; done'
+          
           echo "✅ Integration tests passed"
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
+  test-container-startup:
+    if: github.event_name != 'pull_request'
+    needs: [build-backend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test container startup
+        run: |
+          echo "🧪 Testing backend container startup..."
+          
+          # Pull the image we just built
+          docker pull ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest
+          
+          # Run container in background
+          docker run -d --name test-container -p 8080:80 \
+            -e HuggingFace__ApiToken="dummy-token-for-testing" \
+            -e ASPNETCORE_ENVIRONMENT=Production \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest
+          
+          # Wait for container to start
+          echo "⏳ Waiting for container to start..."
+          sleep 30
+          
+          # Test health endpoint
+          if curl -f http://localhost:8080/api/summarization/health; then
+            echo "✅ Backend container health check passed!"
+          else
+            echo "❌ Backend container health check failed!"
+            echo "Container logs:"
+            docker logs test-container
+            exit 1
+          fi
+          
+          # Test root endpoint
+          if curl -f http://localhost:8080/; then
+            echo "✅ Backend root endpoint check passed!"
+          else
+            echo "❌ Backend root endpoint check failed!"
+            docker logs test-container
+            exit 1
+          fi
+          
+          # Clean up
+          docker stop test-container
+          docker rm test-container
+          
+          echo "🎉 Container startup test completed successfully!"
+
   deploy-to-azure:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [build-backend, integration-test]
+    needs: [build-backend, integration-test, test-container-startup]
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Configure Azure Container App
+      - name: Deploy to Azure Web App for Containers
         run: |
           echo "🚀 Deploying to Azure Web App for Containers"
           echo "Backend Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest"
-
+          
+          # This is where you would typically use Azure CLI or REST API to deploy
+          # For now, we'll use a webhook approach if available
+          
       - name: Trigger Azure deployment webhook
-        if: ${{ github.secrets.AZURE_WEBHOOK_URL != '' }}
+        if: ${{ secrets.AZURE_WEBHOOK_URL != '' }}
         run: |
           curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
             -d '{
               "image": "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest",
               "registry": "${{ env.REGISTRY }}",
-              "tag": "latest"
+              "tag": "latest",
+              "environment": "production"
             }'
           echo "✅ Azure webhook triggered successfully"
 
       - name: Verify Azure deployment
+        if: ${{ secrets.AZURE_WEBHOOK_URL != '' }}
         run: |
-          echo "⏳ Waiting for Azure deployment..."
-          sleep 60
+          echo "⏳ Waiting for Azure deployment to complete..."
+          sleep 90
+          
+          # Test the deployed application
           for i in {1..10}; do
             if curl -f https://aisummarizer2026-bsech4f0cyh3akdw.northeurope-01.azurewebsites.net/api/summarization/health; then
-              echo "✅ Azure deployment verified!"
+              echo "✅ Azure deployment verified successfully!"
               exit 0
             fi
             echo "Attempt $i failed, retrying in 30s..."
             sleep 30
           done
-          echo "❌ Azure deployment verification failed"
+          
+          echo "❌ Azure deployment verification failed after 10 attempts"
+          echo "This may indicate a deployment issue that needs manual investigation"
           exit 1
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image**: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.BACKEND_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image**: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: Production" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

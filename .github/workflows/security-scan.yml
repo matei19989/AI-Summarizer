@@ -103,39 +103,58 @@ jobs:
         path: ./ai-summarizer-frontend/npm-audit-report.json
         retention-days: 30
 
-  container-scan:
+  container-scan-backend:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        image: [backend, frontend]
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build image for scanning
+    - name: Build backend image
       run: |
-        if [ "${{ matrix.image }}" = "backend" ]; then
-          docker build -t scan-image ./AISummarizerAPI
-        else
-          docker build -t scan-image ./ai-summarizer-frontend
-        fi
+        docker build -t ai-summarizer-backend ./AISummarizerAPI
 
-    - name: Run Grype vulnerability scanner
+    - name: Run Grype vulnerability scanner on backend
       uses: anchore/scan-action@v3
       with:
-        image: scan-image
+        image: ai-summarizer-backend
         fail-build: false
         severity-cutoff: high
 
-    - name: Run Syft SBOM generator
+    - name: Generate backend SBOM
       uses: anchore/sbom-action@v0
       with:
-        image: scan-image
+        image: ai-summarizer-backend
         format: spdx-json
+        artifact-name: backend-sbom
+
+  container-scan-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build frontend image
+      run: |
+        docker build -t ai-summarizer-frontend ./ai-summarizer-frontend
+
+    - name: Run Grype vulnerability scanner on frontend
+      uses: anchore/scan-action@v3
+      with:
+        image: ai-summarizer-frontend
+        fail-build: false
+        severity-cutoff: high
+
+    - name: Generate frontend SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ai-summarizer-frontend
+        format: spdx-json
+        artifact-name: frontend-sbom
 
   create-issues:
-    needs: [dependency-check, dotnet-security, npm-security, container-scan]
+    needs: [dependency-check, dotnet-security, npm-security, container-scan-backend, container-scan-frontend]
     runs-on: ubuntu-latest
     if: failure()
     

@@ -1,7 +1,6 @@
 // AISummarizerAPI/Program.cs - Clean, focused bootstrap
 using AISummarizerAPI.Extensions.ServiceCollection;
 using AISummarizerAPI.Extensions.WebApp;
-using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);
 
