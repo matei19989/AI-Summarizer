@@ -22,7 +22,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IContentExtractor, SmartReaderContentExtractor>();
         services.AddScoped<IContentSummarizer, HuggingFaceContentSummarizer>();
         services.AddScoped<IResponseFormatter, ResponseFormatterService>();
-        
+
         // External API clients
         services.AddScoped<IHuggingFaceApiClient, HuggingFaceApiClient>();
 

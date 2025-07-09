@@ -7,181 +7,387 @@ permissions:
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   pr-validation:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    outputs:
+      pr-size: ${{ steps.pr-analysis.outputs.pr-size }}
+      files-changed: ${{ steps.pr-analysis.outputs.files-changed }}
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Get changed files
-      id: changed-files
-      uses: tj-actions/changed-files@v45.0.8
-      with:
-        separator: ","
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45.0.8
+        with:
+          separator: ","
+          json: true
 
-    - name: Check PR size
-      run: |
-        FILES_CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ',' '\n' | wc -l)
-        echo "Files changed: $FILES_CHANGED"
-        
-        if [ $FILES_CHANGED -gt 50 ]; then
-          echo "::warning::Large PR detected ($FILES_CHANGED files). Consider breaking it into smaller PRs."
-        fi
-
-    - name: Validate branch naming
-      run: |
-        BRANCH_NAME="${{ github.head_ref }}"
-        VALID_PATTERN="^(feature|fix|hotfix|release|docs|chore|refactor|test)\/[a-z0-9-]+$"
-        
-        if ! echo "$BRANCH_NAME" | grep -qE "$VALID_PATTERN"; then
-          echo "::warning::Branch name '$BRANCH_NAME' doesn't follow naming convention: type/description"
-        fi
-
-    - name: Check commit messages
-      run: |
-        # Check if commits follow conventional commits format
-        git log --format="%s" origin/${{ github.base_ref }}..HEAD | while read commit; do
-          if ! echo "$commit" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"; then
-            echo "::warning::Commit doesn't follow conventional format: $commit"
+      - name: Analyze PR size and complexity
+        id: pr-analysis
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Get PR information
+          FILES_CHANGED=$(echo ${{ steps.changed-files.outputs.all_changed_files }} | jq length)
+          LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}')
+          LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}')
+          
+          echo "files-changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
+          echo "lines-added=$LINES_ADDED" >> $GITHUB_OUTPUT
+          echo "lines-deleted=$LINES_DELETED" >> $GITHUB_OUTPUT
+          
+          # Determine PR size
+          if [ $FILES_CHANGED -gt 50 ] || [ $LINES_ADDED -gt 1000 ]; then
+            PR_SIZE="large"
+          elif [ $FILES_CHANGED -gt 20 ] || [ $LINES_ADDED -gt 500 ]; then
+            PR_SIZE="medium"
+          else
+            PR_SIZE="small"
           fi
-        done
+          
+          echo "pr-size=$PR_SIZE" >> $GITHUB_OUTPUT
+          
+          echo "📊 PR Analysis:"
+          echo "- Files changed: $FILES_CHANGED"
+          echo "- Lines added: $LINES_ADDED"
+          echo "- Lines deleted: $LINES_DELETED"
+          echo "- PR size: $PR_SIZE"
 
-  secret-scanning:
+      - name: Check for component changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'AISummarizerAPI/**'
+            frontend:
+              - 'ai-summarizer-frontend/**'
+            workflows:
+              - '.github/workflows/**'
+            docker:
+              - '**/Dockerfile'
+              - 'docker-compose*.yml'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+
+      - name: Validate branch naming
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          VALID_PATTERN="^(feature|fix|hotfix|release|docs|chore|refactor|test)\/[a-z0-9-]+$"
+          
+          echo "🔍 Validating branch name: $BRANCH_NAME"
+          
+          if echo "$BRANCH_NAME" | grep -qE "$VALID_PATTERN"; then
+            echo "✅ Branch name follows naming convention"
+          else
+            echo "⚠️ Branch name '$BRANCH_NAME' doesn't follow convention: type/description"
+            echo "Valid prefixes: feature, fix, hotfix, release, docs, chore, refactor, test"
+          fi
+
+      - name: Check commit message format
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "🔍 Checking commit message format..."
+          
+          # Get commits in this PR
+          COMMITS=$(git log --format="%s" $BASE_SHA..$HEAD_SHA)
+          
+          CONVENTIONAL_PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"
+          
+          while IFS= read -r commit; do
+            if [ -n "$commit" ]; then
+              if echo "$commit" | grep -qE "$CONVENTIONAL_PATTERN"; then
+                echo "✅ $commit"
+              else
+                echo "⚠️ $commit (doesn't follow conventional format)"
+              fi
+            fi
+          done <<< "$COMMITS"
+
+  file-quality-checks:
     runs-on: ubuntu-latest
+    needs: pr-validation
+    if: needs.pr-validation.outputs.files-changed != '0'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: TruffleHog secret scan
-      uses: trufflesecurity/trufflehog@main
-      with:
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
-        extra_args: --only-verified
-
-    - name: Gitleaks scan
-      uses: gitleaks/gitleaks-action@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  file-checks:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Check for large files
-      run: |
-        echo "Checking for files larger than 10MB..."
-        find . -type f -size +10M -not -path "./.git/*" | while read file; do
-          SIZE=$(du -h "$file" | cut -f1)
-          echo "::warning::Large file detected: $file ($SIZE)"
-        done
-
-    - name: Check for sensitive file patterns
-      run: |
-        SENSITIVE_PATTERNS=(
-          "*.pem"
-          "*.key"
-          "*.p12"
-          "*.pfx"
-          "*_rsa"
-          "*_dsa"
-          "*.der"
-          "*.crt"
-          "*.cer"
-          ".env.*"
-          "secrets.*"
-        )
-        
-        for pattern in "${SENSITIVE_PATTERNS[@]}"; do
-          if find . -name "$pattern" -not -path "./.git/*" | grep -q .; then
-            echo "::error::Sensitive file pattern detected: $pattern"
-            find . -name "$pattern" -not -path "./.git/*"
+      - name: Check for large files
+        run: |
+          echo "🔍 Checking for large files (>10MB)..."
+          
+          LARGE_FILES=$(find . -type f -size +10M -not -path "./.git/*" -not -path "./node_modules/*" | head -10)
+          
+          if [ -n "$LARGE_FILES" ]; then
+            echo "⚠️ Large files detected:"
+            echo "$LARGE_FILES" | while read file; do
+              SIZE=$(du -h "$file" | cut -f1)
+              echo "- $file ($SIZE)"
+            done
+            echo "Consider using Git LFS for large files or reducing file size"
+          else
+            echo "✅ No large files found"
           fi
-        done
 
-    - name: Validate JSON/YAML files
-      run: |
-        # Validate JSON files
-        find . -name "*.json" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
-          if ! python3 -m json.tool "$file" > /dev/null 2>&1; then
-            echo "::error::Invalid JSON file: $file"
+      - name: Check for sensitive file patterns
+        run: |
+          echo "🔍 Checking for sensitive files..."
+          
+          SENSITIVE_PATTERNS=(
+            "*.pem" "*.key" "*.p12" "*.pfx" "*_rsa" "*_dsa"
+            "*.der" "*.crt" "*.cer" ".env.*" "secrets.*"
+            "*.keystore" "*.jks" "*.pkcs12"
+          )
+          
+          FOUND_SENSITIVE=false
+          for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+            if find . -name "$pattern" -not -path "./.git/*" -not -path "./node_modules/*" | grep -q .; then
+              echo "❌ Sensitive file pattern detected: $pattern"
+              find . -name "$pattern" -not -path "./.git/*" -not -path "./node_modules/*" | head -5
+              FOUND_SENSITIVE=true
+            fi
+          done
+          
+          if [ "$FOUND_SENSITIVE" = "false" ]; then
+            echo "✅ No sensitive files found"
           fi
-        done
-        
-        # Validate YAML files
-        find . -name "*.yml" -o -name "*.yaml" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
-          if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
-            echo "::error::Invalid YAML file: $file"
+
+      - name: Validate configuration files
+        run: |
+          echo "🔍 Validating configuration files..."
+          
+          # Validate JSON files
+          JSON_ERRORS=0
+          find . -name "*.json" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
+            if ! python3 -m json.tool "$file" > /dev/null 2>&1; then
+              echo "❌ Invalid JSON: $file"
+              JSON_ERRORS=$((JSON_ERRORS + 1))
+            fi
+          done
+          
+          # Validate YAML files
+          YAML_ERRORS=0
+          find . -name "*.yml" -o -name "*.yaml" -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
+            if ! python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+              echo "❌ Invalid YAML: $file"
+              YAML_ERRORS=$((YAML_ERRORS + 1))
+            fi
+          done
+          
+          if [ $JSON_ERRORS -eq 0 ] && [ $YAML_ERRORS -eq 0 ]; then
+            echo "✅ All configuration files are valid"
           fi
-        done
 
   dependency-review:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    needs: pr-validation
+    if: needs.pr-validation.outputs.backend-changed == 'true' || needs.pr-validation.outputs.frontend-changed == 'true'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Dependency Review
-      uses: actions/dependency-review-action@v4
-      with:
-        fail-on-severity: high
-        deny-licenses: GPL-3.0
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0
+          comment-summary-in-pr: true
 
   pr-labeler:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
+    needs: pr-validation
     
     steps:
-    - name: Label PR based on files changed
-      uses: actions/labeler@v5
-      with:
-        repo-token: "${{ secrets.GITHUB_TOKEN }}"
-        configuration-path: .github/labeler.yml
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  code-comments:
+      - name: Label PR based on changes
+        uses: actions/labeler@v5
+        with:
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+          configuration-path: .github/labeler.yml
+
+      - name: Add size label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prSize = "${{ needs.pr-validation.outputs.pr-size }}";
+            const sizeLabel = `size/${prSize}`;
+            
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: [sizeLabel]
+            });
+            
+            console.log(`Added label: ${sizeLabel}`);
+
+  pr-comments:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
+    needs: [pr-validation, file-quality-checks, dependency-review]
+    if: always()
     
     steps:
-    - name: Comment on PR
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const prNumber = context.issue.number;
-          const prAuthor = context.payload.pull_request.user.login;
-          
-          // Check if this is the first PR from this user
-          const { data: prs } = await github.rest.pulls.list({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            state: 'all',
-            creator: prAuthor,
-            per_page: 2
-          });
-          
-          if (prs.length === 1) {
+      - name: Welcome first-time contributor
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const prAuthor = context.payload.pull_request.user.login;
+            
+            // Check if this is the first PR from this user
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              creator: prAuthor,
+              per_page: 2
+            });
+            
+            if (prs.length === 1) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `## Welcome @${prAuthor}! 🎉
+                
+                Thank you for your first contribution to this project! 
+                
+                ### What happens next?
+                - 🔍 Automated checks are running and will provide feedback
+                - 👥 A maintainer will review your changes
+                - 💬 Feel free to ask questions in the comments
+                
+                ### Helpful resources
+                - [Contributing Guidelines](CONTRIBUTING.md)
+                - [Code of Conduct](CODE_OF_CONDUCT.md)
+                - [Development Setup](README.md#development)
+                
+                We appreciate your contribution! 🚀`
+              });
+            }
+
+      - name: Add PR size warning
+        if: needs.pr-validation.outputs.pr-size == 'large'
+        env:
+          FILES_CHANGED: ${{ needs.pr-validation.outputs.files-changed }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const filesChanged = process.env.FILES_CHANGED;
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: prNumber,
-              body: `Welcome @${prAuthor}! 🎉 Thank you for your first contribution to this project!\n\nOur automated checks are running and will provide feedback shortly.`
+              issue_number: context.issue.number,
+              body: `## 📏 Large PR Detected
+              
+              This PR changes **${filesChanged}** files, which is quite large.
+              
+              ### Recommendations:
+              - Consider splitting into smaller, focused PRs
+              - Ensure comprehensive testing of all changes
+              - Add detailed descriptions for complex changes
+              - Review carefully for potential breaking changes
+              
+              Large PRs are harder to review and more likely to introduce bugs.`
             });
-          }
+
+      - name: Add quality check results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = {
+              'PR Validation': '${{ needs.pr-validation.result }}',
+              'File Quality': '${{ needs.file-quality-checks.result }}',
+              'Dependency Review': '${{ needs.dependency-review.result }}'
+            };
+            
+            let comment = `## 🔍 Quality Check Results\n\n`;
+            comment += `| Check | Status |\n`;
+            comment += `|-------|--------|\n`;
+            
+            for (const [check, status] of Object.entries(results)) {
+              const emoji = status === 'success' ? '✅' : 
+                           status === 'failure' ? '❌' : 
+                           status === 'skipped' ? '⏭️' : '⚠️';
+              comment += `| ${check} | ${emoji} ${status} |\n`;
+            }
+            
+            comment += `\n### Details\n`;
+            comment += `- **Files changed**: ${{ needs.pr-validation.outputs.files-changed }}\n`;
+            comment += `- **PR size**: ${{ needs.pr-validation.outputs.pr-size }}\n`;
+            comment += `- **Backend changes**: ${{ needs.pr-validation.outputs.backend-changed }}\n`;
+            comment += `- **Frontend changes**: ${{ needs.pr-validation.outputs.frontend-changed }}\n`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+  pr-summary:
+    runs-on: ubuntu-latest
+    needs: [pr-validation, file-quality-checks, dependency-review, pr-labeler, pr-comments]
+    if: always()
+    
+    steps:
+      - name: PR Quality Summary
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          echo "## 🔍 PR Quality Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Validation | ${{ needs.pr-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| File Quality | ${{ needs.file-quality-checks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Review | ${{ needs.dependency-review.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Labeler | ${{ needs.pr-labeler.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Comments | ${{ needs.pr-comments.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### PR Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Number**: #$PR_NUMBER" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Changed**: ${{ needs.pr-validation.outputs.files-changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Size**: ${{ needs.pr-validation.outputs.pr-size }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Changes**: ${{ needs.pr-validation.outputs.backend-changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Changes**: ${{ needs.pr-validation.outputs.frontend-changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author**: @$PR_AUTHOR" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: $HEAD_REF" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status
+          if [ "${{ needs.pr-validation.result }}" = "success" ] && \
+             [ "${{ needs.file-quality-checks.result }}" = "success" ] && \
+             [ "${{ needs.dependency-review.result }}" = "success" ]; then
+            echo "- **Overall Status**: ✅ **READY FOR REVIEW**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Overall Status**: ⚠️ **NEEDS ATTENTION**" >> $GITHUB_STEP_SUMMARY
+          fi

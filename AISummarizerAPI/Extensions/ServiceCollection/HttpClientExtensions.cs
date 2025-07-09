@@ -79,7 +79,7 @@ public static class HttpClientExtensions
         services.AddHttpClient<IHuggingFaceApiClient, HuggingFaceApiClient>((serviceProvider, client) =>
         {
             var huggingFaceOptions = serviceProvider.GetRequiredService<IOptions<HuggingFaceOptions>>().Value;
-            
+
             client.Timeout = TimeSpan.FromSeconds(huggingFaceOptions.RateLimit.TimeoutSeconds);
             client.BaseAddress = new Uri(huggingFaceOptions.BaseUrl);
 

@@ -17,13 +17,13 @@ public static class ConfigurationExtensions
     {
         // Configure HuggingFace options with validation
         services.Configure<HuggingFaceOptions>(configuration.GetSection(HuggingFaceOptions.SectionName));
-        
+
         services.AddOptions<HuggingFaceOptions>()
             .Bind(configuration.GetSection(HuggingFaceOptions.SectionName))
             .ValidateDataAnnotations()
-            .Validate(options => !string.IsNullOrEmpty(options.ApiToken), 
+            .Validate(options => !string.IsNullOrEmpty(options.ApiToken),
                      "HuggingFace API token is required")
-            .Validate(options => options.RateLimit.RequestsPerMinute > 0, 
+            .Validate(options => options.RateLimit.RequestsPerMinute > 0,
                      "Rate limit must be greater than 0")
             .ValidateOnStart();
 
@@ -36,11 +36,11 @@ public static class ConfigurationExtensions
     public static void ValidateConfiguration(this IServiceProvider services)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        
+
         try
         {
             var huggingFaceOptions = services.GetRequiredService<IOptions<HuggingFaceOptions>>().Value;
-            
+
             if (string.IsNullOrEmpty(huggingFaceOptions.ApiToken))
             {
                 logger.LogWarning("⚠️ HuggingFace API token not configured - check environment variables");
@@ -49,7 +49,7 @@ public static class ConfigurationExtensions
             {
                 logger.LogInformation("✅ HuggingFace API token configured");
             }
-            
+
             logger.LogInformation("✅ Configuration validation completed");
         }
         catch (Exception ex)

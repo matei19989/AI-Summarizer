@@ -18,11 +18,11 @@ public static class EndpointExtensions
     public static Microsoft.AspNetCore.Builder.WebApplication ConfigureEndpoints(this Microsoft.AspNetCore.Builder.WebApplication app)
     {
         app.MapRootEndpoint();
-        
+
         // Future: Add other endpoint groups
         // app.MapHealthCheckEndpoints();
         // app.MapMetricsEndpoints();
-        
+
         return app;
     }
 

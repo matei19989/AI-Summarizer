@@ -16,18 +16,18 @@ public static class FrameworkServiceExtensions
     {
         // MVC and API services
         services.AddControllers();
-        
+
         // OpenAPI/Swagger for development
         services.AddOpenApi();
-        
+
         // Health checks for monitoring
         services.AddHealthChecks();
-        
+
         // Future framework services can be added here:
         // services.AddProblemDetails();
         // services.AddApiVersioning();
         // services.AddResponseCompression();
-        
+
         return services;
     }
 }
