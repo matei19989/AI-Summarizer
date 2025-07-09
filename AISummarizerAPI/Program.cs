@@ -9,8 +9,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVercel", policy =>
     {
-        policy.SetIsOriginAllowed(origin => 
-            origin.Contains("vercel.app") || 
+        policy.SetIsOriginAllowed(origin =>
+            origin.Contains("vercel.app") ||
             origin.Contains("localhost") ||
             origin.Contains("aisummarizer2026"))
             .AllowAnyMethod()
