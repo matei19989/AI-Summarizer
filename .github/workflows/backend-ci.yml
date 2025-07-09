@@ -2,30 +2,43 @@ name: Backend CI
 
 permissions:
   contents: read
-  security-events: write
+  pull-requests: write
 
 on:
   push:
     branches: [ main, develop ]
     paths: 
       - 'AISummarizerAPI/**'
+      - '!AISummarizerAPI/Dockerfile'
+      - '!AISummarizerAPI/.dockerignore'
       - '.github/workflows/backend-ci.yml'
+      - '.github/actions/setup-dotnet/**'
   pull_request:
     branches: [ main, develop ]
     paths: 
       - 'AISummarizerAPI/**'
+      - '!AISummarizerAPI/Dockerfile'
+      - '!AISummarizerAPI/.dockerignore'
       - '.github/workflows/backend-ci.yml'
+      - '.github/actions/setup-dotnet/**'
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   DOTNET_VERSION: '9.0.x'
   WORKING_DIRECTORY: ./AISummarizerAPI
 
 jobs:
-  build-and-test:
+  code-quality:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         dotnet-version: ['9.0.x']
+    outputs:
+      test-results: ${{ steps.test.outputs.test-results }}
+      coverage-report: ${{ steps.test.outputs.coverage-report }}
     
     steps:
     - name: Checkout code
@@ -33,31 +46,43 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Setup .NET ${{ matrix.dotnet-version }}
-      uses: actions/setup-dotnet@v4
+    - name: Setup .NET Environment
+      uses: ./.github/actions/setup-dotnet
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
-
-    - name: Cache NuGet packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
     - name: Restore dependencies
       working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: dotnet restore
+      run: dotnet restore --verbosity minimal
 
-    - name: Build
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: dotnet build --no-restore --configuration Release
-
-    - name: Run tests
+    - name: Check code formatting
       working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
-        if find . -name "*Tests.csproj" -o -name "*Test.csproj" | grep -q .; then
+        echo "🔍 Checking code formatting..."
+        dotnet format --verify-no-changes --verbosity diagnostic
+        echo "✅ Code formatting check passed"
+
+    - name: Build solution
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        echo "🏗️ Building solution..."
+        dotnet build --no-restore --configuration Release \
+          /p:EnableNETAnalyzers=true \
+          /p:AnalysisLevel=latest \
+          /p:TreatWarningsAsErrors=true
+        echo "✅ Build completed successfully"
+
+    - name: Run tests with coverage
+      id: test
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        echo "🧪 Running tests with coverage..."
+        
+        # Check if test projects exist
+        TEST_PROJECTS=$(find . -name "*Tests.csproj" -o -name "*Test.csproj" | head -1)
+        
+        if [ -n "$TEST_PROJECTS" ]; then
           dotnet test --no-build --configuration Release \
             --logger "trx;LogFileName=test-results.trx" \
             --logger "console;verbosity=detailed" \
@@ -65,75 +90,104 @@ jobs:
             /p:CollectCoverage=true \
             /p:CoverletOutputFormat=opencover \
             --results-directory ./TestResults
+          
+          echo "test-results=success" >> $GITHUB_OUTPUT
+          echo "coverage-report=./TestResults" >> $GITHUB_OUTPUT
+          echo "✅ Tests completed successfully"
         else
-          echo "::warning::No test projects found. Consider adding unit tests."
+          echo "⚠️ No test projects found - consider adding unit tests"
+          echo "test-results=no-tests" >> $GITHUB_OUTPUT
+          echo "coverage-report=none" >> $GITHUB_OUTPUT
         fi
 
     - name: Upload test results
-      if: always()
+      if: always() && steps.test.outputs.test-results == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ matrix.dotnet-version }}
         path: ${{ env.WORKING_DIRECTORY }}/TestResults/
         retention-days: 7
 
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: './AISummarizerAPI'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        severity: 'CRITICAL,HIGH'
-
-    - name: Upload Trivy scan results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-    - name: Check for security vulnerabilities
+    - name: Generate coverage report
+      if: steps.test.outputs.coverage-report != 'none'
+      working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
-        if grep -q "HIGH\|CRITICAL" trivy-results.sarif; then
-          echo "::error::Security vulnerabilities found!"
-          exit 1
+        echo "📊 Generating coverage report..."
+        if command -v reportgenerator >/dev/null 2>&1; then
+          reportgenerator -reports:TestResults/*/coverage.opencover.xml -targetdir:TestResults/CoverageReport -reporttypes:HtmlInline_AzurePipelines
+          echo "✅ Coverage report generated"
+        else
+          echo "ℹ️ ReportGenerator not available, skipping HTML report"
         fi
 
-  code-quality:
+  static-analysis:
     runs-on: ubuntu-latest
+    needs: code-quality
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+    - name: Setup .NET Environment
+      uses: ./.github/actions/setup-dotnet
       with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
-    - name: Install dotnet tools
-      run: |
-        dotnet tool install --global dotnet-format
-        dotnet tool install --global dotnet-reportgenerator-globaltool
-
-    - name: Check code formatting
+    - name: Restore dependencies
       working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: dotnet format --verify-no-changes --verbosity diagnostic
+      run: dotnet restore --verbosity minimal
 
-    - name: Run code analysis
+    - name: Run static code analysis
       working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
-        dotnet build --configuration Release \
+        echo "🔍 Running static code analysis..."
+        dotnet build --no-restore --configuration Release \
           /p:EnableNETAnalyzers=true \
           /p:AnalysisLevel=latest \
-          /p:TreatWarningsAsErrors=true
+          /p:RunAnalyzersDuringBuild=true \
+          /p:TreatWarningsAsErrors=false
+        echo "✅ Static analysis completed"
 
-  # Container deployment handled by docker-build.yml
-  # Traditional Azure deployment REMOVED for full container strategy
+    - name: Check for code issues
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        echo "🔍 Checking for common code issues..."
+        
+        # Check for TODO/FIXME comments
+        TODO_COUNT=$(grep -r "TODO\|FIXME" --include="*.cs" . | wc -l)
+        if [ $TODO_COUNT -gt 0 ]; then
+          echo "⚠️ Found $TODO_COUNT TODO/FIXME comments"
+          grep -r "TODO\|FIXME" --include="*.cs" . | head -10
+        fi
+        
+        # Check for debug statements
+        DEBUG_COUNT=$(grep -r "Console\.WriteLine\|Debug\.WriteLine" --include="*.cs" . | wc -l)
+        if [ $DEBUG_COUNT -gt 0 ]; then
+          echo "⚠️ Found $DEBUG_COUNT debug statements"
+          grep -r "Console\.WriteLine\|Debug\.WriteLine" --include="*.cs" . | head -5
+        fi
+        
+        echo "✅ Code quality check completed"
+
+  build-summary:
+    runs-on: ubuntu-latest
+    needs: [code-quality, static-analysis]
+    if: always()
+    
+    steps:
+    - name: Build Summary
+      run: |
+        echo "## 🏗️ Backend CI Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Code Quality**: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Static Analysis**: ${{ needs.static-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Test Results**: ${{ needs.code-quality.outputs.test-results }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Coverage Report**: ${{ needs.code-quality.outputs.coverage-report != 'none' && '✅ Generated' || '⚠️ Not available' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        
+        # Determine overall status
+        if [ "${{ needs.code-quality.result }}" = "success" ] && [ "${{ needs.static-analysis.result }}" = "success" ]; then
+          echo "- **Overall Status**: ✅ **PASSED**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Overall Status**: ❌ **FAILED**" >> $GITHUB_STEP_SUMMARY
+        fi

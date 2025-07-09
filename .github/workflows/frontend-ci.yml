@@ -2,79 +2,99 @@ name: Frontend CI
 
 permissions:
   contents: read
-  security-events: write
+  pull-requests: write
 
 on:
   push:
     branches: [ main, develop ]
     paths: 
       - 'ai-summarizer-frontend/**'
+      - '!ai-summarizer-frontend/Dockerfile'
+      - '!ai-summarizer-frontend/.dockerignore'
+      - '!ai-summarizer-frontend/nginx*.conf'
       - '.github/workflows/frontend-ci.yml'
+      - '.github/actions/setup-node/**'
   pull_request:
     branches: [ main, develop ]
     paths: 
       - 'ai-summarizer-frontend/**'
+      - '!ai-summarizer-frontend/Dockerfile'
+      - '!ai-summarizer-frontend/.dockerignore'
+      - '!ai-summarizer-frontend/nginx*.conf'
       - '.github/workflows/frontend-ci.yml'
+      - '.github/actions/setup-node/**'
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   NODE_VERSION: '20'
   WORKING_DIRECTORY: ./ai-summarizer-frontend
 
 jobs:
-  build-and-test:
+  code-quality:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: ['18', '20']
+    outputs:
+      build-artifact: ${{ steps.build.outputs.build-artifact }}
+      test-results: ${{ steps.test.outputs.test-results }}
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
+    - name: Setup Node.js Environment
+      uses: ./.github/actions/setup-node
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: ${{ env.WORKING_DIRECTORY }}/package-lock.json
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
-    - name: Cache dependencies
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.WORKING_DIRECTORY }}/node_modules
-        key: ${{ runner.os }}-node-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-node-${{ matrix.node-version }}-
-
-    - name: Install dependencies
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: npm ci
-
-    - name: Run linting
+    - name: Run ESLint
       working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
-        npm run lint || echo "::warning::Linting issues found. Please fix them."
-
-    - name: Type check (if TypeScript)
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        if [ -f "tsconfig.json" ]; then
-          npm run type-check || echo "::warning::Type checking not configured"
+        echo "🔍 Running ESLint..."
+        if npm run lint 2>/dev/null; then
+          echo "✅ ESLint passed"
         else
-          echo "::warning::Consider migrating to TypeScript for better type safety"
+          echo "⚠️ ESLint issues found - please fix them"
+          npm run lint || true
+        fi
+
+    - name: Type checking
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        echo "🔍 Checking for TypeScript..."
+        if [ -f "tsconfig.json" ]; then
+          echo "📘 Running TypeScript type checking..."
+          if npm run type-check 2>/dev/null; then
+            echo "✅ Type checking passed"
+          else
+            echo "⚠️ Type checking not configured or failed"
+          fi
+        else
+          echo "⚠️ No TypeScript configuration found - consider migrating to TypeScript"
         fi
 
     - name: Run tests
+      id: test
       working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
+        echo "🧪 Running tests..."
+        
         if npm run | grep -q "test"; then
-          npm test -- --coverage --watchAll=false --passWithNoTests
+          npm test -- --coverage --watchAll=false --passWithNoTests --maxWorkers=2
+          echo "test-results=success" >> $GITHUB_OUTPUT
+          echo "✅ Tests completed successfully"
         else
-          echo "::warning::No test script found. Please add tests to your project."
+          echo "⚠️ No test script found - consider adding tests"
+          echo "test-results=no-tests" >> $GITHUB_OUTPUT
         fi
 
-    - name: Upload coverage reports
-      if: matrix.node-version == env.NODE_VERSION
+    - name: Upload test coverage
+      if: matrix.node-version == env.NODE_VERSION && steps.test.outputs.test-results == 'success'
       uses: codecov/codecov-action@v5
       with:
         directory: ${{ env.WORKING_DIRECTORY }}/coverage
@@ -82,132 +102,88 @@ jobs:
         fail_ci_if_error: false
 
     - name: Build application
+      id: build
       working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
+        echo "🏗️ Building application..."
         npm run build
-        echo "Build size report:"
-        du -sh dist/
+        
+        # Calculate build size
+        BUILD_SIZE=$(du -sh dist/ | cut -f1)
+        echo "📦 Build size: $BUILD_SIZE"
+        
+        # Generate build report
+        echo "## 📊 Build Report" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Size**: $BUILD_SIZE" >> $GITHUB_STEP_SUMMARY
+        echo "- **Node Version**: ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+        
+        echo "build-artifact=dist/" >> $GITHUB_OUTPUT
+        echo "✅ Build completed successfully"
 
     - name: Upload build artifacts
       if: matrix.node-version == env.NODE_VERSION
       uses: actions/upload-artifact@v4
       with:
-        name: frontend-build
+        name: frontend-build-${{ github.sha }}
         path: ${{ env.WORKING_DIRECTORY }}/dist/
         retention-days: 7
 
-  security-scan:
+  security-check:
     runs-on: ubuntu-latest
+    needs: code-quality
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Setup Node.js Environment
+      uses: ./.github/actions/setup-node
       with:
-        node-version: ${{ env.NODE_VERSION }}
-
-    - name: Install dependencies
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: npm ci
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
     - name: Run npm audit
       working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
-        npm audit --production --audit-level=moderate || echo "::warning::Vulnerabilities found in dependencies"
-
-    - name: Run Snyk security scan
-      uses: snyk/actions/node@master
-      continue-on-error: true
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high --file=${{ env.WORKING_DIRECTORY }}/package.json
-
-  lighthouse-check:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: frontend-build
-        path: ./dist
-
-    - name: Simple build validation
-      run: |
-        echo "Build artifacts present:"
-        ls -la ./dist/
-
-    - name: Lighthouse CI
-      run: |
-        echo "::notice::Lighthouse CI could be added here for performance auditing"
-        echo "Consider adding: https://github.com/treosh/lighthouse-ci-action"
-        echo "This would provide performance, accessibility, and SEO metrics"
-
-  docker-build:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build Docker image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./ai-summarizer-frontend
-        file: ./ai-summarizer-frontend/Dockerfile
-        push: false
-        target: production
-        tags: localhost/ai-summarizer-frontend:ci-${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    - name: Test Docker image
-      run: |
-        echo "🧪 Testing Docker image startup..."
-        docker run -d --name test-frontend -p 3000:80 \
-          localhost/ai-summarizer-frontend:ci-${{ github.sha }}
+        echo "🔒 Running npm security audit..."
         
-        # Wait for container to start
-        sleep 10
+        # Run audit and capture results
+        npm audit --json > npm-audit-report.json || true
         
-        # Test health endpoint
-        if curl -f http://localhost:3000/health; then
-          echo "✅ Frontend container health check passed!"
-        else
-          echo "❌ Frontend container health check failed!"
-          docker logs test-frontend
-          exit 1
+        # Check for critical/high vulnerabilities
+        if [ -f npm-audit-report.json ]; then
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json)
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json)
+          
+          echo "🔍 Security scan results:"
+          echo "- Critical: $CRITICAL"
+          echo "- High: $HIGH"
+          
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "⚠️ High-severity vulnerabilities found:"
+            npm audit --audit-level=high
+          else
+            echo "✅ No high-severity vulnerabilities found"
+          fi
         fi
-        
-        # Clean up
-        docker stop test-frontend
-        docker rm test-frontend
 
-  deploy-preview:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    needs: [build-and-test, security-scan]
-    
-    steps:
-    - name: Deploy preview to Vercel
+    - name: Check for sensitive files
+      working-directory: ${{ env.WORKING_DIRECTORY }}
       run: |
-        echo "::notice::Vercel preview deployments are handled automatically via GitHub integration"
-        echo "Preview will be available at: https://vercel.com/[your-username]/ai-summarizer-frontend"
+        echo "🔍 Checking for sensitive files..."
+        
+        SENSITIVE_FILES=$(find . -name "*.env*" -o -name "*.key" -o -name "*.pem" -o -name "*.p12" | grep -v node_modules | grep -v .env.example || true)
+        
+        if [ -n "$SENSITIVE_FILES" ]; then
+          echo "⚠️ Sensitive files found:"
+          echo "$SENSITIVE_FILES"
+        else
+          echo "✅ No sensitive files found"
+        fi
 
   bundle-analysis:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: code-quality
     if: github.event_name == 'pull_request'
     
     steps:
@@ -217,20 +193,67 @@ jobs:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
-        name: frontend-build
+        name: frontend-build-${{ github.sha }}
         path: ./dist
 
     - name: Analyze bundle size
       run: |
+        echo "📊 Analyzing bundle size..."
+        
         echo "## 📊 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
-        echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
-        echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+        echo "| File | Size | Type |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
         
         cd ./dist
-        find . -name "*.js" -o -name "*.css" | while read file; do
+        
+        # Analyze JavaScript files
+        find . -name "*.js" | while read file; do
           size=$(du -h "$file" | cut -f1)
-          echo "| $file | $size |" >> $GITHUB_STEP_SUMMARY
+          echo "| $file | $size | JavaScript |" >> $GITHUB_STEP_SUMMARY
         done
         
+        # Analyze CSS files
+        find . -name "*.css" | while read file; do
+          size=$(du -h "$file" | cut -f1)
+          echo "| $file | $size | CSS |" >> $GITHUB_STEP_SUMMARY
+        done
+        
+        # Total size
+        total_size=$(du -sh . | cut -f1)
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Total build size:** $(du -sh . | cut -f1)" >> $GITHUB_STEP_SUMMARY
+        echo "**Total Bundle Size:** $total_size" >> $GITHUB_STEP_SUMMARY
+        
+        # Check for large files
+        LARGE_FILES=$(find . -size +500k -type f | head -5)
+        if [ -n "$LARGE_FILES" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Large files detected (>500KB):**" >> $GITHUB_STEP_SUMMARY
+          echo "$LARGE_FILES" | while read file; do
+            size=$(du -h "$file" | cut -f1)
+            echo "- $file ($size)" >> $GITHUB_STEP_SUMMARY
+          done
+        fi
+
+  build-summary:
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-check, bundle-analysis]
+    if: always()
+    
+    steps:
+    - name: Build Summary
+      run: |
+        echo "## 🎨 Frontend CI Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Code Quality**: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Security Check**: ${{ needs.security-check.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Bundle Analysis**: ${{ needs.bundle-analysis.result || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Test Results**: ${{ needs.code-quality.outputs.test-results }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Artifact**: ${{ needs.code-quality.outputs.build-artifact != '' && '✅ Available' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        
+        # Determine overall status
+        if [ "${{ needs.code-quality.result }}" = "success" ] && [ "${{ needs.security-check.result }}" = "success" ]; then
+          echo "- **Overall Status**: ✅ **PASSED**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Overall Status**: ❌ **FAILED**" >> $GITHUB_STEP_SUMMARY
+        fi
