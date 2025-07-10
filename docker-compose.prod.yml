@@ -11,12 +11,13 @@ services:
     expose:
       - "80"  # Only expose internally
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_DETAILEDERRORS=false
-      - Logging__LogLevel__Default=Warning
-      - Logging__LogLevel__Microsoft=Error
-    env_file:
-      - ./.env.production
+       - ASPNETCORE_ENVIRONMENT=Production
+       - ASPNETCORE_DETAILEDERRORS=false
+       - ASPNETCORE_URLS=http://+:80
+       - Logging__LogLevel__Default=Warning
+       - Logging__LogLevel__Microsoft=Error
+       - HUGGINGFACE__APITOKEN=${HUGGINGFACE__APITOKEN:-}
+       - ASPNETCORE_ALLOWEDORIGINS=${ASPNETCORE_ALLOWEDORIGINS:-https://ai-summarizer-theta-ten.vercel.app}
     deploy:
       resources:
         limits:
