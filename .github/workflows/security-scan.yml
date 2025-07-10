@@ -174,7 +174,6 @@ jobs:
         with:
           base: ${{ steps.calculate_base.outputs.base_ref }}
           head: ${{ github.sha }}
-          output: /tmp/trufflehog-results.json
           extra_args: --only-verified --json
           path: ./
           version: latest

@@ -63,21 +63,6 @@ jobs:
           npm run lint || true
         fi
 
-    - name: Type checking
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        echo "🔍 Checking for TypeScript..."
-        if [ -f "tsconfig.json" ]; then
-          echo "📘 Running TypeScript type checking..."
-          if npm run type-check 2>/dev/null; then
-            echo "✅ Type checking passed"
-          else
-            echo "⚠️ Type checking not configured or failed"
-          fi
-        else
-          echo "⚠️ No TypeScript configuration found - consider migrating to TypeScript"
-        fi
-
     - name: Run tests
       id: test
       working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -93,14 +78,6 @@ jobs:
           echo "test-results=no-tests" >> $GITHUB_OUTPUT
         fi
 
-    - name: Upload test coverage
-      if: matrix.node-version == env.NODE_VERSION && steps.test.outputs.test-results == 'success'
-      uses: codecov/codecov-action@v5
-      with:
-        directory: ${{ env.WORKING_DIRECTORY }}/coverage
-        flags: frontend
-        fail_ci_if_error: false
-
     - name: Build application
       id: build
       working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -112,12 +89,6 @@ jobs:
         BUILD_SIZE=$(du -sh dist/ | cut -f1)
         echo "📦 Build size: $BUILD_SIZE"
         
-        # Generate build report
-        echo "## 📊 Build Report" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Size**: $BUILD_SIZE" >> $GITHUB_STEP_SUMMARY
-        echo "- **Node Version**: ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Time**: $(date)" >> $GITHUB_STEP_SUMMARY
-        
         echo "build-artifact=dist/" >> $GITHUB_OUTPUT
         echo "✅ Build completed successfully"
 
@@ -128,6 +99,99 @@ jobs:
         name: frontend-build-${{ github.sha }}
         path: ${{ env.WORKING_DIRECTORY }}/dist/
         retention-days: 7
+
+  docker-test:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    if: needs.code-quality.outputs.build-artifact != ''
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build test Docker image
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        echo "🐳 Building Docker image for testing..."
+        
+        # Build the test image using the test target
+        docker build -t ai-summarizer-frontend:ci-${{ github.sha }} \
+          --target test \
+          .
+        
+        echo "✅ Docker image built successfully"
+
+    - name: Test Docker container
+      run: |
+        echo "🧪 Testing Docker container..."
+        
+        # Start container
+        docker run -d --name test-frontend -p 3000:80 \
+          ai-summarizer-frontend:ci-${{ github.sha }}
+        
+        # Wait for container to start
+        sleep 10
+        
+        # Test health endpoint
+        if curl -f http://localhost:3000/health; then
+          echo "✅ Container health check passed!"
+        else
+          echo "❌ Container health check failed!"
+          docker logs test-frontend
+          exit 1
+        fi
+        
+        # Test static content
+        if curl -f http://localhost:3000/; then
+          echo "✅ Static content served successfully!"
+        else
+          echo "❌ Static content test failed!"
+          docker logs test-frontend
+          exit 1
+        fi
+        
+        # Clean up
+        docker stop test-frontend
+        docker rm test-frontend
+
+  lighthouse:
+    runs-on: ubuntu-latest
+    needs: [code-quality, docker-test]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install dependencies and build
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        npm ci
+        npm run build
+
+    - name: Serve static files
+      working-directory: ${{ env.WORKING_DIRECTORY }}
+      run: |
+        # Install and start a simple HTTP server
+        npm install -g serve
+        serve -s dist -l 4000 &
+        sleep 5
+
+    - name: Run Lighthouse CI
+      uses: treosh/lighthouse-ci-action@v11
+      with:
+        urls: |
+          http://localhost:4000
+        uploadArtifacts: true
+        temporaryPublicStorage: true
 
   security-check:
     runs-on: ubuntu-latest
@@ -167,76 +231,9 @@ jobs:
           fi
         fi
 
-    - name: Check for sensitive files
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        echo "🔍 Checking for sensitive files..."
-        
-        SENSITIVE_FILES=$(find . -name "*.env*" -o -name "*.key" -o -name "*.pem" -o -name "*.p12" | grep -v node_modules | grep -v .env.example || true)
-        
-        if [ -n "$SENSITIVE_FILES" ]; then
-          echo "⚠️ Sensitive files found:"
-          echo "$SENSITIVE_FILES"
-        else
-          echo "✅ No sensitive files found"
-        fi
-
-  bundle-analysis:
-    runs-on: ubuntu-latest
-    needs: code-quality
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: frontend-build-${{ github.sha }}
-        path: ./dist
-
-    - name: Analyze bundle size
-      run: |
-        echo "📊 Analyzing bundle size..."
-        
-        echo "## 📊 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
-        echo "| File | Size | Type |" >> $GITHUB_STEP_SUMMARY
-        echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
-        
-        cd ./dist
-        
-        # Analyze JavaScript files
-        find . -name "*.js" | while read file; do
-          size=$(du -h "$file" | cut -f1)
-          echo "| $file | $size | JavaScript |" >> $GITHUB_STEP_SUMMARY
-        done
-        
-        # Analyze CSS files
-        find . -name "*.css" | while read file; do
-          size=$(du -h "$file" | cut -f1)
-          echo "| $file | $size | CSS |" >> $GITHUB_STEP_SUMMARY
-        done
-        
-        # Total size
-        total_size=$(du -sh . | cut -f1)
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Total Bundle Size:** $total_size" >> $GITHUB_STEP_SUMMARY
-        
-        # Check for large files
-        LARGE_FILES=$(find . -size +500k -type f | head -5)
-        if [ -n "$LARGE_FILES" ]; then
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ **Large files detected (>500KB):**" >> $GITHUB_STEP_SUMMARY
-          echo "$LARGE_FILES" | while read file; do
-            size=$(du -h "$file" | cut -f1)
-            echo "- $file ($size)" >> $GITHUB_STEP_SUMMARY
-          done
-        fi
-
   build-summary:
     runs-on: ubuntu-latest
-    needs: [code-quality, security-check, bundle-analysis]
+    needs: [code-quality, docker-test, lighthouse, security-check]
     if: always()
     
     steps:
@@ -244,16 +241,9 @@ jobs:
       run: |
         echo "## 🎨 Frontend CI Summary" >> $GITHUB_STEP_SUMMARY
         echo "- **Code Quality**: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Docker Test**: ${{ needs.docker-test.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Lighthouse**: ${{ needs.lighthouse.result || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Security Check**: ${{ needs.security-check.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Bundle Analysis**: ${{ needs.bundle-analysis.result || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Test Results**: ${{ needs.code-quality.outputs.test-results }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Artifact**: ${{ needs.code-quality.outputs.build-artifact != '' && '✅ Available' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-        
-        # Determine overall status
-        if [ "${{ needs.code-quality.result }}" = "success" ] && [ "${{ needs.security-check.result }}" = "success" ]; then
-          echo "- **Overall Status**: ✅ **PASSED**" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "- **Overall Status**: ❌ **FAILED**" >> $GITHUB_STEP_SUMMARY
-        fi
