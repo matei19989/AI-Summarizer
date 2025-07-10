@@ -231,17 +231,19 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ steps.meta.outputs.version }}
 
-      - name: Test container startup
+      - name: Test container startup (FIXED - Use test target)
         if: github.event_name != 'pull_request'
         run: |
           echo "🧪 Testing frontend container startup..."
           
-          # Pull the image we just built
-          docker pull ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest
+          # Build test image specifically for testing (no backend dependency)
+          docker build -t frontend-test:latest \
+            --target test \
+            ./ai-summarizer-frontend/
           
-          # Run container
+          # Run container with test configuration
           docker run -d --name test-frontend -p 3000:80 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.FRONTEND_IMAGE }}:latest
+            frontend-test:latest
           
           # Wait for container to start
           echo "⏳ Waiting for container to start..."
@@ -252,6 +254,15 @@ jobs:
             echo "✅ Frontend container health check passed!"
           else
             echo "❌ Frontend container health check failed!"
+            docker logs test-frontend
+            exit 1
+          fi
+          
+          # Test static content
+          if curl -f http://localhost:3000/; then
+            echo "✅ Frontend static content served successfully!"
+          else
+            echo "❌ Frontend static content test failed!"
             docker logs test-frontend
             exit 1
           fi
