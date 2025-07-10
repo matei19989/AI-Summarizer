@@ -1,0 +1,1 @@
+export { BrowserTTSProvider } from './BrowserTTSProvider';

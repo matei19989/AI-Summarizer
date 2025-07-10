@@ -1,0 +1,1 @@
+export { ITTSProvider } from './ITTSProvider';

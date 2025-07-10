@@ -1,6 +1,10 @@
+// ai-summarizer-frontend/src/features/summarization/services/SummarizationService.js
+// INTEGRATION UPDATE: Replace the existing playAudio method with TTS service integration
+
 import axios from 'axios';
 import { API_CONFIG } from '../../../config/apiConfig';
 import { INPUT_MODES } from '../components/constants';
+import { ttsService } from '../../../services/tts/TTSService';
 
 export const SummarizationService = {
   /**
@@ -41,7 +45,7 @@ export const SummarizationService = {
       // This abstraction layer protects the frontend from backend changes
       return {
         summary: response.data.summary,
-        hasAudio: response.data.hasAudio,
+        hasAudio: ttsService.isAvailable(), // ✅ UPDATED: Use TTS service availability
         success: response.data.success,
         generatedAt: response.data.generatedAt
       };
@@ -75,15 +79,33 @@ export const SummarizationService = {
   },
 
   /**
-   * Handles audio playback for generated summaries
-   * Currently a placeholder - will integrate with TTS API in future phases
+   * ✅ UPDATED: Handles audio playback using the new TTS service
+   * Replaces the old placeholder alert with actual TTS functionality
    */
-  playAudio(content) {
-    console.log('Audio playback requested for content:', content.substring(0, 50) + '...');
-    
-    // TODO: Implement actual TTS integration
-    // This will eventually call the backend TTS endpoint
-    alert(`🔊 Audio playback will be implemented in the next phase!\n\nSummary to be spoken:\n"${content.substring(0, 100)}..."`);
+  async playAudio(content) {
+    try {
+      if (!content || typeof content !== 'string') {
+        throw new Error('Content must be provided for audio playback');
+      }
+
+      console.log('🔊 Playing audio for content:', content.substring(0, 50) + '...');
+      
+      // Use the TTS service to speak the content
+      await ttsService.speakSummary(content);
+      
+      console.log('✅ Audio playback started successfully');
+    } catch (error) {
+      console.error('❌ Audio playback failed:', error);
+      
+      // Provide user-friendly error message
+      const errorMessage = error.message || 'Audio playback is not available';
+      
+      // Show user-friendly error notification
+      // You can replace this with a toast notification system if you have one
+      alert(`🔊 Audio Error: ${errorMessage}`);
+      
+      throw error;
+    }
   },
 
   /**
@@ -102,5 +124,38 @@ export const SummarizationService = {
       console.error('API health check failed:', error);
       throw new Error('Could not connect to the backend API');
     }
+  },
+
+  /**
+   * ✅ NEW: Gets TTS service status
+   * Provides information about TTS availability and current state
+   */
+  getTTSStatus() {
+    return ttsService.getStatus();
+  },
+
+  /**
+   * ✅ NEW: Stops current audio playback
+   * Provides direct control over TTS playback
+   */
+  stopAudio() {
+    ttsService.stop();
+    console.log('🔊 Audio playback stopped');
+  },
+
+  /**
+   * ✅ NEW: Pauses current audio playback
+   */
+  pauseAudio() {
+    ttsService.pause();
+    console.log('🔊 Audio playback paused');
+  },
+
+  /**
+   * ✅ NEW: Resumes paused audio playback
+   */
+  resumeAudio() {
+    ttsService.resume();
+    console.log('🔊 Audio playback resumed');
   }
 };
