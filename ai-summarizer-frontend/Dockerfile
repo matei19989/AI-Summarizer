@@ -1,5 +1,5 @@
 # ===================================================================
-# Multi-stage Dockerfile for React + Vite Frontend - Optimized
+# Multi-stage Dockerfile for React + Vite Frontend - Fixed
 # ===================================================================
 
 # Stage 1: Dependencies
@@ -16,21 +16,27 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 3: Development runtime
+# Stage 3: Test runtime (for CI/CD - NO BACKEND DEPENDENCY)
+FROM nginx:alpine AS test
+RUN rm -rf /etc/nginx/conf.d/*
+COPY nginx.test.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+# Stage 4: Development runtime
 FROM nginx:alpine AS development
 RUN rm -rf /etc/nginx/conf.d/*
 COPY nginx.dev.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx/ /usr/share/nginx/html/nginx/
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 
-# Stage 4: Production runtime
+# Stage 5: Production runtime
 FROM nginx:alpine AS production
 RUN rm -rf /etc/nginx/conf.d/*
 COPY nginx.prod.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx/ /usr/share/nginx/html/nginx/
 RUN addgroup -g 1001 -S nginx-user && \
     adduser -u 1001 -S nginx-user -G nginx-user && \
     chown -R nginx-user:nginx-user /usr/share/nginx/html && \
@@ -45,5 +51,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
 CMD ["nginx", "-g", "daemon off;"]
 
-#Stage 5: RUNTIME
-FROM production  AS runtime
+# Stage 6: Runtime (default)
+FROM production AS runtime
