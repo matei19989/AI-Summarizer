@@ -145,3 +145,9 @@ docs/_build/
 # Backup files
 *.bak
 *.backup
+
+env
+
+env.*
+.env
+.env.*
