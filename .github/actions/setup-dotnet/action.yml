@@ -17,9 +17,10 @@ runs:
   using: 'composite'
   steps:
     - name: Setup .NET ${{ inputs.dotnet-version }}
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
+        include-prerelease: true  # Add this for .NET 9.0 support
 
     - name: Cache NuGet packages
       id: cache-nuget
