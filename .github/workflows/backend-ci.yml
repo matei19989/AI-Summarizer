@@ -47,10 +47,11 @@ jobs:
         fetch-depth: 0
 
     # FIX: Explicitly install .NET 9.0
-    - name: Setup .NET 9.0
-      uses: actions/setup-dotnet@v4
+    - name: Setup .NET Environment
+      uses: ./.github/actions/setup-dotnet
       with:
         dotnet-version: '9.0.x'
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
     - name: Verify .NET version
       run: |
@@ -133,10 +134,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup .NET 9.0
-      uses: actions/setup-dotnet@v4
+    - name: Setup .NET Environment
+      uses: ./.github/actions/setup-dotnet
       with:
         dotnet-version: '9.0.x'
+        working-directory: ${{ env.WORKING_DIRECTORY }}
 
     - name: Restore dependencies
       working-directory: ${{ env.WORKING_DIRECTORY }}
