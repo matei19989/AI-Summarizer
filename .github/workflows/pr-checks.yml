@@ -1,114 +1,20 @@
 name: PR Quality Checks
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  repository-projects: write  # Required for label creation
-
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
-
-concurrency:
-  group: pr-checks-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+    types: [opened, synchronize]
 
 jobs:
-  pr-validation:
+  file-checks:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    outputs:
-      pr-size: ${{ steps.pr-analysis.outputs.pr-size }}
-      files-changed: ${{ steps.pr-analysis.outputs.files-changed }}
-      backend-changed: ${{ steps.changes.outputs.backend }}
-      frontend-changed: ${{ steps.changes.outputs.frontend }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v45.0.8
-        with:
-          separator: ","
-
-      - name: Analyze PR size and complexity
-        id: pr-analysis
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Get PR information using string manipulation
-          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
-          
-          if [ -n "$CHANGED_FILES" ]; then
-            FILES_CHANGED=$(echo "$CHANGED_FILES" | tr ',' '\n' | grep -c . || echo "0")
-          else
-            FILES_CHANGED=0
-          fi
-          
-          LINES_ADDED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $1} END {print sum}' || echo "0")
-          LINES_DELETED=$(git diff --numstat $BASE_SHA..$HEAD_SHA | awk '{sum += $2} END {print sum}' || echo "0")
-          
-          echo "files-changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
-          echo "lines-added=$LINES_ADDED" >> $GITHUB_OUTPUT
-          echo "lines-deleted=$LINES_DELETED" >> $GITHUB_OUTPUT
-          
-          # Determine PR size
-          if [ $FILES_CHANGED -gt 50 ] || [ $LINES_ADDED -gt 1000 ]; then
-            PR_SIZE="large"
-          elif [ $FILES_CHANGED -gt 20 ] || [ $LINES_ADDED -gt 500 ]; then
-            PR_SIZE="medium"
-          else
-            PR_SIZE="small"
-          fi
-          
-          echo "pr-size=$PR_SIZE" >> $GITHUB_OUTPUT
-          
-          echo "📊 PR Analysis:"
-          echo "- Files changed: $FILES_CHANGED"
-          echo "- Lines added: $LINES_ADDED"
-          echo "- Lines deleted: $LINES_DELETED"
-          echo "- PR size: $PR_SIZE"
-
-      - name: Check for component changes
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            backend:
-              - 'AISummarizerAPI/**'
-            frontend:
-              - 'ai-summarizer-frontend/**'
-            workflows:
-              - '.github/workflows/**'
-            docker:
-              - '**/Dockerfile'
-              - 'docker-compose*.yml'
-            docs:
-              - '**/*.md'
-              - 'docs/**'
-
-  file-quality-checks:
-    runs-on: ubuntu-latest
-    needs: pr-validation
-    if: needs.pr-validation.outputs.files-changed != '0'
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Check for large files
         run: |
-          echo "🔍 Checking for large files (>10MB)..."
-          
-          LARGE_FILES=$(find . -type f -size +10M -not -path "./.git/*" -not -path "./node_modules/*" | head -10)
+          echo "Checking for large files (>10MB)..."
+          LARGE_FILES=$(find . -type f -size +10M -not -path "./.git/*" -not -path "./node_modules/*")
           
           if [ -n "$LARGE_FILES" ]; then
             echo "⚠️ Large files detected:"
@@ -116,16 +22,15 @@ jobs:
               SIZE=$(du -h "$file" | cut -f1)
               echo "- $file ($SIZE)"
             done
-            echo "Consider using Git LFS for large files or reducing file size"
+            echo "Consider using Git LFS for large files"
+            exit 1
           else
             echo "✅ No large files found"
           fi
 
   dependency-review:
     runs-on: ubuntu-latest
-    needs: pr-validation
-    if: needs.pr-validation.outputs.backend-changed == 'true' || needs.pr-validation.outputs.frontend-changed == 'true'
-    
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -134,86 +39,4 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
-          deny-licenses: GPL-3.0
           comment-summary-in-pr: true
-
-  pr-labeler:
-    runs-on: ubuntu-latest
-    needs: pr-validation
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Create required labels first
-      - name: Create default labels
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const labels = [
-              { name: 'backend', color: '0052cc', description: 'Backend related changes' },
-              { name: 'frontend', color: '1d76db', description: 'Frontend related changes' },
-              { name: 'dependencies', color: '0366d6', description: 'Pull requests that update a dependency file' },
-              { name: 'size/small', color: '00ff00', description: 'Small PR' },
-              { name: 'size/medium', color: 'ffff00', description: 'Medium PR' },
-              { name: 'size/large', color: 'ff0000', description: 'Large PR' }
-            ];
-
-            for (const label of labels) {
-              try {
-                await github.rest.issues.createLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name,
-                  color: label.color,
-                  description: label.description
-                });
-              } catch (error) {
-                // Label might already exist, which is fine
-                console.log(`Label ${label.name} might already exist: ${error.message}`);
-              }
-            }
-
-      - name: Label PR based on changes
-        uses: actions/labeler@v5
-        with:
-          repo-token: "${{ secrets.GITHUB_TOKEN }}"
-          configuration-path: .github/labeler.yml
-          sync-labels: false
-
-      - name: Add size label
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prSize = "${{ needs.pr-validation.outputs.pr-size }}";
-            const sizeLabel = `size/${prSize}`;
-            
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: [sizeLabel]
-            });
-            
-            console.log(`Added label: ${sizeLabel}`);
-
-  pr-summary:
-    runs-on: ubuntu-latest
-    needs: [pr-validation, file-quality-checks, dependency-review, pr-labeler]
-    if: always()
-    
-    steps:
-      - name: PR Quality Summary
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          echo "## 🔍 PR Quality Check Summary" >> $GITHUB_STEP_SUMMARY
-          echo "### Results" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Validation | ${{ needs.pr-validation.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| File Quality | ${{ needs.file-quality-checks.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dependency Review | ${{ needs.dependency-review.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Labeler | ${{ needs.pr-labeler.result }} |" >> $GITHUB_STEP_SUMMARY
