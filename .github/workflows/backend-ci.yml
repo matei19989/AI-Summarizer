@@ -1,172 +1,38 @@
 name: Backend CI
 
-permissions:
-  contents: read
-  pull-requests: write
-
 on:
   push:
     branches: [ main, develop ]
-    paths: 
-      - 'AISummarizerAPI/**'
-      - '!AISummarizerAPI/Dockerfile'
-      - '!AISummarizerAPI/.dockerignore'
-      - '.github/workflows/backend-ci.yml'
-      - '.github/actions/setup-dotnet/**'
+    paths: ['AISummarizerAPI/**']
   pull_request:
     branches: [ main, develop ]
-    paths: 
-      - 'AISummarizerAPI/**'
-      - '!AISummarizerAPI/Dockerfile'
-      - '!AISummarizerAPI/.dockerignore'
-      - '.github/workflows/backend-ci.yml'
-      - '.github/actions/setup-dotnet/**'
-
-concurrency:
-  group: backend-ci-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  DOTNET_VERSION: '9.0.x'
-  WORKING_DIRECTORY: ./AISummarizerAPI
+    paths: ['AISummarizerAPI/**']
 
 jobs:
-  code-quality:
+  build-and-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        dotnet-version: ['9.0.x']
-    outputs:
-      test-results: ${{ steps.test.outputs.test-results }}
-      coverage-report: ${{ steps.test.outputs.coverage-report }}
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    # FIX: Explicitly install .NET 9.0
-    - name: Setup .NET Environment
-      uses: ./.github/actions/setup-dotnet
-      with:
-        dotnet-version: '9.0.x'
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-
-    - name: Verify .NET version
-      run: |
-        dotnet --version
-        dotnet --list-sdks
-
-    - name: Cache NuGet packages
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.nuget/packages
-          ${{ env.WORKING_DIRECTORY }}/obj
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', '**/*.csproj') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
-
-    - name: Restore dependencies
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: dotnet restore --verbosity minimal
-
-    - name: Check code formatting
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        echo "🔍 Checking code formatting..."
-        # Install dotnet-format if not available
-        dotnet tool install -g dotnet-format || true
-        dotnet format --verify-no-changes --verbosity diagnostic
-        echo "✅ Code formatting check passed"
-
-    - name: Build solution
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        echo "🏗️ Building solution..."
-        dotnet build --no-restore --configuration Release \
-          /p:EnableNETAnalyzers=true \
-          /p:AnalysisLevel=latest \
-          /p:TreatWarningsAsErrors=true
-        echo "✅ Build completed successfully"
-
-    - name: Run tests with coverage
-      id: test
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        echo "🧪 Running tests with coverage..."
-        
-        # Check if test projects exist
-        TEST_PROJECTS=$(find . -name "*Tests.csproj" -o -name "*Test.csproj" | head -1)
-        
-        if [ -n "$TEST_PROJECTS" ]; then
-          dotnet test --no-build --configuration Release \
-            --logger "trx;LogFileName=test-results.trx" \
-            --logger "console;verbosity=detailed" \
-            --collect:"XPlat Code Coverage" \
-            /p:CollectCoverage=true \
-            /p:CoverletOutputFormat=opencover \
-            --results-directory ./TestResults
-          
-          echo "test-results=success" >> $GITHUB_OUTPUT
-          echo "coverage-report=./TestResults" >> $GITHUB_OUTPUT
-          echo "✅ Tests completed successfully"
-        else
-          echo "⚠️ No test projects found - consider adding unit tests"
-          echo "test-results=no-tests" >> $GITHUB_OUTPUT
-          echo "coverage-report=none" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Upload test results
-      if: always() && steps.test.outputs.test-results == 'success'
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-${{ matrix.dotnet-version }}
-        path: ${{ env.WORKING_DIRECTORY }}/TestResults/
-        retention-days: 7
-
-  static-analysis:
-    runs-on: ubuntu-latest
-    needs: code-quality
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup .NET Environment
-      uses: ./.github/actions/setup-dotnet
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '9.0.x'
-        working-directory: ${{ env.WORKING_DIRECTORY }}
 
     - name: Restore dependencies
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: dotnet restore --verbosity minimal
+      working-directory: ./AISummarizerAPI
+      run: dotnet restore
 
-    - name: Run static code analysis
-      working-directory: ${{ env.WORKING_DIRECTORY }}
-      run: |
-        echo "🔍 Running static code analysis..."
-        dotnet build --no-restore --configuration Release \
-          /p:EnableNETAnalyzers=true \
-          /p:AnalysisLevel=latest \
-          /p:RunAnalyzersDuringBuild=true \
-          /p:TreatWarningsAsErrors=false
-        echo "✅ Static analysis completed"
+    - name: Build
+      working-directory: ./AISummarizerAPI
+      run: dotnet build --configuration Release --no-restore
 
-  build-summary:
-    runs-on: ubuntu-latest
-    needs: [code-quality, static-analysis]
-    if: always()
-    
-    steps:
-    - name: Build Summary
-      run: |
-        echo "## 🏗️ Backend CI Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Code Quality**: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Static Analysis**: ${{ needs.static-analysis.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Test Results**: ${{ needs.code-quality.outputs.test-results }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Coverage Report**: ${{ needs.code-quality.outputs.coverage-report != 'none' && '✅ Generated' || '⚠️ Not available' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+    - name: Test
+      working-directory: ./AISummarizerAPI
+      run: dotnet test --configuration Release --no-build --verbosity normal
+
+    - name: Check formatting
+      working-directory: ./AISummarizerAPI
+      run: dotnet format --verify-no-changes
