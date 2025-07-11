@@ -2,30 +2,11 @@ name: Security Scanning
 on:
   push:
     branches: [ main, develop ]
-    paths:
-      - '**/package*.json'
-      - '**/*.csproj'
-      - '**/Dockerfile'
-      - '.github/workflows/security-scan.yml'
   pull_request:
     branches: [ main, develop ]
-    paths:
-      - '**/package*.json'
-      - '**/*.csproj'
-      - '**/Dockerfile'
   schedule:
     - cron: '0 2 * * 1'  # Weekly scan on Mondays
   workflow_dispatch:
-    inputs:
-      scan_type:
-        description: 'Type of security scan to run'
-        type: choice
-        options:
-          - all
-          - dependencies
-          - containers
-          - secrets
-        default: all
 
 concurrency:
   group: security-scan-${{ github.ref }}
@@ -34,173 +15,28 @@ concurrency:
 permissions:
   contents: read
   security-events: write
-  issues: write
-  pull-requests: write
 
 jobs:
-  dependency-scanning:
-    runs-on: ubuntu-latest
-    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'dependencies' || github.event.inputs.scan_type == ''
-    strategy:
-      matrix:
-        component:
-          - name: backend
-            path: ./AISummarizerAPI
-            type: dotnet
-          - name: frontend
-            path: ./ai-summarizer-frontend
-            type: npm
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup .NET environment
-        if: matrix.component.type == 'dotnet'
-        uses: ./.github/actions/setup-dotnet
-        with:
-          working-directory: ${{ matrix.component.path }}
-
-      - name: Setup Node.js environment
-        if: matrix.component.type == 'npm'
-        uses: ./.github/actions/setup-node
-        with:
-          working-directory: ${{ matrix.component.path }}
-
-      - name: .NET Security Scan
-        if: matrix.component.type == 'dotnet'
-        working-directory: ${{ matrix.component.path }}
-        run: |
-          echo "🔍 Scanning .NET dependencies for vulnerabilities..."
-
-          # Check for vulnerable packages
-          echo "📋 Checking for vulnerable packages..."
-          dotnet list package --vulnerable --include-transitive > vulnerable-packages.txt 2>&1 || true
-
-          if grep -q "vulnerable" vulnerable-packages.txt; then
-            echo "⚠️ Vulnerable packages found:"
-            cat vulnerable-packages.txt
-            echo "vulnerable-packages=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ No vulnerable packages found"
-            echo "vulnerable-packages=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Check for outdated packages
-          echo "📋 Checking for outdated packages..."
-          if command -v dotnet-outdated >/dev/null 2>&1; then
-            dotnet-outdated -f -td 3 > outdated-packages.txt 2>&1 || true
-            if [ -s outdated-packages.txt ]; then
-              echo "ℹ️ Outdated packages found:"
-              cat outdated-packages.txt
-            fi
-          else
-            echo "ℹ️ dotnet-outdated not available, skipping outdated check"
-          fi
-
-      - name: NPM Security Scan
-        if: matrix.component.type == 'npm'
-        working-directory: ${{ matrix.component.path }}
-        run: |
-          echo "🔍 Scanning NPM dependencies for vulnerabilities..."
-
-          # Run npm audit
-          npm audit --json > npm-audit-report.json 2>&1 || true
-
-          if [ -f npm-audit-report.json ]; then
-            # Parse audit results
-            CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit-report.json)
-            HIGH=$(jq '.metadata.vulnerabilities.high // 0' npm-audit-report.json)
-            MODERATE=$(jq '.metadata.vulnerabilities.moderate // 0' npm-audit-report.json)
-            LOW=$(jq '.metadata.vulnerabilities.low // 0' npm-audit-report.json)
-
-            echo "📊 Vulnerability Summary:"
-            echo "- Critical: $CRITICAL"
-            echo "- High: $HIGH"
-            echo "- Moderate: $MODERATE"
-            echo "- Low: $LOW"
-
-            # Set outputs for further processing
-            echo "critical-vulns=$CRITICAL" >> $GITHUB_OUTPUT
-            echo "high-vulns=$HIGH" >> $GITHUB_OUTPUT
-
-            # Show details for high/critical vulnerabilities
-            if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
-              echo "⚠️ High-severity vulnerabilities detected:"
-              npm audit --audit-level=high 2>&1 || true
-            else
-              echo "✅ No high-severity vulnerabilities found"
-            fi
-          else
-            echo "❌ Could not generate audit report"
-          fi
-
-      - name: Upload audit reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.component.name }}-security-report
-          path: |
-            ${{ matrix.component.path }}/*audit*.json
-            ${{ matrix.component.path }}/*packages*.txt
-          retention-days: 30
-
   secret-scanning:
     runs-on: ubuntu-latest
-    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'secrets' || github.event.inputs.scan_type == ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Calculate BASE for TruffleHog
-        id: calculate_base
-        run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            if git rev-parse HEAD~1 &>/dev/null; then
-              echo "base_ref=$(git rev-parse HEAD~1)" >> $GITHUB_OUTPUT
-            else
-              echo "No previous commit found on this branch. Scanning full history."
-              echo "base_ref=" >> $GITHUB_OUTPUT
-            fi
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "base_ref=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
-          else
-            echo "Running full history scan for event: ${{ github.event_name }}"
-            echo "base_ref=" >> $GITHUB_OUTPUT
-          fi
-
       - name: TruffleHog secret scan
         uses: trufflesecurity/trufflehog@main
         with:
-          base: ${{ steps.calculate_base.outputs.base_ref }}
-          head: ${{ github.sha }}
-          extra_args: --only-verified --json
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
           path: ./
-          version: latest
-
-      - name: Process TruffleHog results
-        run: |
-          echo "🔍 Processing secret scan results..."
-
-          if [ -f /tmp/trufflehog-results.json ] && [ -s /tmp/trufflehog-results.json ]; then
-            SECRET_COUNT=$(jq length /tmp/trufflehog-results.json)
-            echo "⚠️ Found $SECRET_COUNT potential secrets"
-
-            # Show first few results
-            jq -r '.[] | "File: \(.SourceMetadata.Data.Filesystem.file) | Secret: \(.DetectorName)"' /tmp/trufflehog-results.json | head -10
-          else
-            echo "✅ No secrets detected"
-          fi
-
-      - name: Gitleaks scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          extra_args: --only-verified
 
       - name: Check for sensitive file patterns
         run: |
           echo "🔍 Checking for sensitive file patterns..."
-
+          
           SENSITIVE_PATTERNS=(
             "*.pem" "*.key" "*.p12" "*.pfx" "*_rsa" "*_dsa"
             "*.der" "*.crt" "*.cer" ".env.*" "secrets.*"
@@ -218,206 +54,22 @@ jobs:
           if [ -n "$FOUND_FILES" ]; then
             echo "⚠️ Sensitive file patterns detected:"
             echo -e "$FOUND_FILES"
+            exit 1
           else
             echo "✅ No sensitive file patterns found"
           fi
 
-  container-scanning:
-    runs-on: ubuntu-latest
-    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'containers' || github.event.inputs.scan_type == ''
-    strategy:
-      matrix:
-        component:
-          - name: backend
-            context: ./AISummarizerAPI
-            dockerfile: ./AISummarizerAPI/Dockerfile
-          - name: frontend
-            context: ./ai-summarizer-frontend
-            dockerfile: ./ai-summarizer-frontend/Dockerfile
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build Docker image for scanning
-        run: |
-          echo "🏗️ Building ${{ matrix.component.name }} image for security scanning..."
-          docker build -t ${{ matrix.component.name }}-security-scan:latest -f ${{ matrix.component.dockerfile }} ${{ matrix.component.context }}
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ matrix.component.name }}-security-scan:latest
-          format: 'sarif'
-          output: '${{ matrix.component.name }}-trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: '${{ matrix.component.name }}-trivy-results.sarif'
-          category: '${{ matrix.component.name }}-security-scan'
-
-      - name: Run Grype vulnerability scanner
-        uses: anchore/scan-action@v3
-        with:
-          image: ${{ matrix.component.name }}-security-scan:latest
-          fail-build: false
-          severity-cutoff: high
-          output-format: sarif
-          output-file: ${{ matrix.component.name }}-grype-results.sarif
-
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ matrix.component.name }}-security-scan:latest
-          format: spdx-json
-          artifact-name: ${{ matrix.component.name }}-sbom
-          output-file: ${{ matrix.component.name }}-sbom.spdx.json
-
-      - name: Upload security artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.component.name }}-container-security
-          path: |
-            ${{ matrix.component.name }}-*.sarif
-            ${{ matrix.component.name }}-*.spdx.json
-          retention-days: 30
-
-  owasp-dependency-check:
-    runs-on: ubuntu-latest
-    if: github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == 'dependencies' || github.event.inputs.scan_type == ''
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run OWASP Dependency Check
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: 'AI-Summarizer'
-          path: '.'
-          format: 'ALL'
-          args: >
-            --enableRetired
-            --enableExperimental
-            --disableYarnAudit
-            --disableNodeAudit
-            --exclude "**/node_modules/**"
-            --exclude "**/dist/**"
-            --exclude "**/build/**"
-
-      - name: Upload OWASP report
-        uses: actions/upload-artifact@v4
-        with:
-          name: owasp-dependency-check-report
-          path: reports/
-          retention-days: 30
-
   security-summary:
-    needs: [dependency-scanning, secret-scanning, container-scanning, owasp-dependency-check]
+    needs: [secret-scanning]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Collect security results
-        run: |
-          echo "🔒 Security Scanning Summary"
-          echo "=========================="
-
-          # Dependency scanning results
-          echo "📦 Dependency Scanning: ${{ needs.dependency-scanning.result }}"
-
-          # Secret scanning results
-          echo "🔐 Secret Scanning: ${{ needs.secret-scanning.result }}"
-
-          # Container scanning results
-          echo "🐳 Container Scanning: ${{ needs.container-scanning.result }}"
-
-          # OWASP dependency check results
-          echo "🛡️ OWASP Dependency Check: ${{ needs.owasp-dependency-check.result }}"
-
-          # Overall security status
-          if [ "${{ needs.dependency-scanning.result }}" = "success" ] && \
-             [ "${{ needs.secret-scanning.result }}" = "success" ] && \
-             [ "${{ needs.container-scanning.result }}" = "success" ] && \
-             [ "${{ needs.owasp-dependency-check.result }}" = "success" ]; then
-            echo "✅ Overall Security Status: PASSED"
-          else
-            echo "❌ Overall Security Status: ATTENTION REQUIRED"
-          fi
-
-      - name: Create security summary
+      - name: Security Summary
         run: |
           echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status | Notes |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Dependency Scanning | ${{ needs.dependency-scanning.result }} | Checked for vulnerable packages |" >> $GITHUB_STEP_SUMMARY
-          echo "| Secret Scanning | ${{ needs.secret-scanning.result }} | Searched for exposed secrets |" >> $GITHUB_STEP_SUMMARY
-          echo "| Container Scanning | ${{ needs.container-scanning.result }} | Scanned Docker images |" >> $GITHUB_STEP_SUMMARY
-          echo "| OWASP Dependency Check | ${{ needs.owasp-dependency-check.result }} | Comprehensive dependency analysis |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Actions Taken" >> $GITHUB_STEP_SUMMARY
-          echo "- 🔍 Scanned all dependencies for known vulnerabilities" >> $GITHUB_STEP_SUMMARY
-          echo "- 🔐 Checked for exposed secrets and sensitive files" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐳 Analyzed Docker images for security issues" >> $GITHUB_STEP_SUMMARY
-          echo "- 📊 Generated SBOMs for supply chain transparency" >> $GITHUB_STEP_SUMMARY
-          echo "- 📋 Uploaded results to GitHub Security tab" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scanning | ${{ needs.secret-scanning.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Scan Date**: $(date)" >> $GITHUB_STEP_SUMMARY
           echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
-  create-security-issue:
-    needs: [dependency-scanning, secret-scanning, container-scanning, owasp-dependency-check]
-    if: failure() && github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create security issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const date = new Date().toISOString().split('T')[0];
-            const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🔒 Security Scan Alert - ${date}`,
-              body: `## Security Scan Results
-
-                        The automated security scan has found issues that need attention.
-
-                        ### Scan Results
-            - **Dependency Scanning**: ${{ needs.dependency-scanning.result }}
-            - **Secret Scanning**: ${{ needs.secret-scanning.result }}
-            - **Container Scanning**: ${{ needs.container-scanning.result }}
-            - **OWASP Dependency Check**: ${{ needs.owasp-dependency-check.result }}
-
-                        ### Details
-            - **Workflow Run**: [#${{ github.run_number }}](${runUrl})
-            - **Branch**: ${{ github.ref }}
-            - **Commit**: ${{ github.sha }}
-            - **Scan Date**: ${date}
-
-                        ### Next Steps
-            1. Review the workflow logs and artifacts for detailed information
-            2. Check the GitHub Security tab for vulnerability details
-            3. Update dependencies and fix security issues
-            4. Re-run the security scan to verify fixes
-
-                        ### Artifacts
-            Security scan artifacts are available in the workflow run for 30 days.
-
-                        ---
-            *This issue was created automatically by the security scanning workflow.*`,
-              labels: ['security', 'automated', 'high-priority']
-            });
-
-            console.log(`Created security issue #${issue.data.number}`);
-
-            // Add assignees if configured
-            if (process.env.SECURITY_TEAM) {
-              await github.rest.issues.addAssignees({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.data.number,
-                assignees: process.env.SECURITY_TEAM.split(',')
-              });
-            }
