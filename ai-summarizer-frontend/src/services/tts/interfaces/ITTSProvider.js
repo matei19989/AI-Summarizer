@@ -20,7 +20,7 @@ export class ITTSProvider {
    * @param {Object} options - Speaking options (rate, pitch, voice, etc.)
    * @returns {Promise<void>} Promise that resolves when speech starts
    */
-  async speak(text, _options = {}) {
+  async speak(text, _options = {}) { // eslint-disable-line no-unused-vars
   throw new Error('Method must be implemented');
 }
 
