@@ -24,8 +24,6 @@ export const TTSControls = ({
     isLoading,
     speakSummary,
     stop,
-    pause,
-    resume,
     toggle,
     clearError,
     canSpeak,
