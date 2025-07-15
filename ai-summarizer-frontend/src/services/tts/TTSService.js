@@ -1,13 +1,8 @@
 // ai-summarizer-frontend/src/services/tts/TTSService.js
+// SIMPLE REFACTOR - Just clean up the existing file
 
 import { BrowserTTSProvider } from './providers/BrowserTTSProvider';
 
-/**
- * Text-to-Speech Service
- * Follows Single Responsibility Principle - manages TTS operations
- * Follows Open/Closed Principle - extensible for new providers
- * Follows Dependency Inversion - depends on provider abstractions
- */
 export class TTSService {
   constructor() {
     this.providers = new Map();
@@ -19,46 +14,29 @@ export class TTSService {
       lang: 'en-US'
     };
     
-    // Initialize available providers
     this._initializeProviders();
   }
 
-  /**
-   * Checks if TTS is available
-   * @returns {boolean} True if any provider is available
-   */
+  // ==================== PUBLIC API ====================
+
   isAvailable() {
     return this.currentProvider !== null;
   }
 
-  /**
-   * Gets current provider name
-   * @returns {string|null} Current provider name or null
-   */
   getCurrentProvider() {
     return this.currentProvider ? this.currentProvider.constructor.name : null;
   }
 
-  /**
-   * Speaks text using the current provider
-   * @param {string} text - Text to speak
-   * @param {Object} options - Speaking options
-   * @returns {Promise<void>} Promise that resolves when speech starts
-   */
   async speak(text, options = {}) {
     if (!this.isAvailable()) {
       throw new Error('TTS service is not available');
     }
 
-    // Validate input
-    if (!text || typeof text !== 'string') {
+    if (!this._isValidText(text)) {
       throw new Error('Text must be a non-empty string');
     }
 
-    // Clean and prepare text
     const cleanText = this._preprocessText(text);
-    
-    // Merge options with defaults
     const finalOptions = { ...this.defaultOptions, ...options };
     
     console.log('🔊 TTS: Speaking text:', cleanText.substring(0, 50) + '...');
@@ -71,79 +49,45 @@ export class TTSService {
     }
   }
 
-  /**
-   * Stops current speech
-   */
   stop() {
     if (this.currentProvider) {
       this.currentProvider.stop();
     }
   }
 
-  /**
-   * Pauses current speech
-   */
   pause() {
     if (this.currentProvider) {
       this.currentProvider.pause();
     }
   }
 
-  /**
-   * Resumes paused speech
-   */
   resume() {
     if (this.currentProvider) {
       this.currentProvider.resume();
     }
   }
 
-  /**
-   * Gets current speaking state
-   * @returns {boolean} True if currently speaking
-   */
   isSpeaking() {
     return this.currentProvider ? this.currentProvider.isSpeaking() : false;
   }
 
-  /**
-   * Gets current paused state
-   * @returns {boolean} True if currently paused
-   */
   isPaused() {
     return this.currentProvider ? this.currentProvider.isPaused() : false;
   }
 
-  /**
-   * Gets available voices from current provider
-   * @returns {Array} Array of available voices
-   */
   getVoices() {
     return this.currentProvider ? this.currentProvider.getVoices() : [];
   }
 
-  /**
-   * Sets default speaking options
-   * @param {Object} options - Default options to set
-   */
   setDefaultOptions(options) {
     this.defaultOptions = { ...this.defaultOptions, ...options };
     console.log('🔊 TTS: Updated default options:', this.defaultOptions);
   }
 
-  /**
-   * Gets current default options
-   * @returns {Object} Current default options
-   */
   getDefaultOptions() {
     return { ...this.defaultOptions };
   }
 
-  /**
-   * Speaks text with specific voice optimizations for summaries
-   * @param {string} summaryText - Summary text to speak
-   * @returns {Promise<void>} Promise that resolves when speech starts
-   */
   async speakSummary(summaryText) {
     const summaryOptions = {
       rate: 0.85,  // Slightly slower for comprehension
@@ -155,10 +99,6 @@ export class TTSService {
     return this.speak(summaryText, summaryOptions);
   }
 
-  /**
-   * Gets TTS status information
-   * @returns {Object} Status information
-   */
   getStatus() {
     return {
       available: this.isAvailable(),
@@ -170,10 +110,26 @@ export class TTSService {
     };
   }
 
-  /**
-   * Initializes available TTS providers
-   * @private
-   */
+  // ==================== PRIVATE METHODS ====================
+  // Broken down for clarity - no new files needed!
+
+  _isValidText(text) {
+    return text && typeof text === 'string' && text.trim().length > 0;
+  }
+
+  _preprocessText(text) {
+    if (!text) return '';
+    
+    return text
+      .trim()
+      ._addSentencePauses()
+      ._addCommaPauses()
+      ._normalizeSpaces()
+      ._removeFormatting()
+      ._handleUrls()
+      ._ensureProperEnding();
+  }
+
   _initializeProviders() {
     // Initialize Browser TTS Provider
     const browserProvider = new BrowserTTSProvider();
@@ -181,42 +137,45 @@ export class TTSService {
       this.providers.set('browser', browserProvider);
       this.currentProvider = browserProvider;
       console.log('🔊 TTS: Browser provider initialized');
-    }
-
-    // Future providers can be added here:
-    // const azureProvider = new AzureTTSProvider();
-    // if (azureProvider.isSupported()) {
-    //   this.providers.set('azure', azureProvider);
-    // }
-
-    if (!this.currentProvider) {
+    } else {
       console.warn('🔊 TTS: No TTS providers available');
     }
-  }
 
-  /**
-   * Preprocesses text for better speech synthesis
-   * @param {string} text - Raw text
-   * @returns {string} Processed text
-   * @private
-   */
-  _preprocessText(text) {
-    return text
-      .trim()
-      // Add pauses after sentences
-      .replace(/\.\s/g, '. ')
-      // Add pauses after commas
-      .replace(/,\s/g, ', ')
-      // Remove multiple spaces
-      .replace(/\s+/g, ' ')
-      // Remove markdown-like formatting
-      .replace(/[*_#]/g, '')
-      // Remove URLs (they don't speak well)
-      .replace(/https?:\/\/[^\s]+/g, '[link]')
-      // Ensure proper sentence endings
-      .replace(/([.!?])$/, '$1');
+    // Future providers can be added here easily:
+    // this._tryInitializeAzureProvider();
+    // this._tryInitializeGoogleProvider();
   }
 }
+
+// ==================== STRING EXTENSIONS ====================
+// Simple helper methods to make text preprocessing readable
+
+String.prototype._addSentencePauses = function() {
+  return this.replace(/\.\s/g, '. ');
+};
+
+String.prototype._addCommaPauses = function() {
+  return this.replace(/,\s/g, ', ');
+};
+
+String.prototype._normalizeSpaces = function() {
+  return this.replace(/\s+/g, ' ');
+};
+
+String.prototype._removeFormatting = function() {
+  return this.replace(/[*_#]/g, '');
+};
+
+String.prototype._handleUrls = function() {
+  return this.replace(/https?:\/\/[^\s]+/g, '[link]');
+};
+
+String.prototype._ensureProperEnding = function() {
+  const text = this.trim();
+  return text.endsWith('.') || text.endsWith('!') || text.endsWith('?') 
+    ? text 
+    : text + '.';
+};
 
 // Export singleton instance
 export const ttsService = new TTSService();
